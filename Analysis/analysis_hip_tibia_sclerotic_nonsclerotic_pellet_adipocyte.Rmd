@@ -1,0 +1,1906 @@
+---
+title: 'Lea Hip & Tibia BRBseq July 2024 '
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+setwd("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/")
+```
+Path to the data: ***Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq***
+
+
+# --- Import libraries
+```{r}
+#library(BiocManager)
+rm(list = ls(all.names = TRUE))
+gc()
+.libPaths("/home/mbotos/R/x86_64-pc-linux-gnu-library/4.2/")
+# BiocManager::install(c("dorothea"),force=TRUE,ask = TRUE)
+# library(dorothea)
+
+library(dplyr)
+library(tidyr)
+library(edgeR)
+```
+
+
+
+# --- Read tables
+```{r}
+matrix_counts_tibia <- read.table(file ="/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/brbseq-nf-pipeline/results/AMP0211/count_matrix/L270524LF01_01.read.counts.sampleIDs.detailed.txt",sep = "\t",header = TRUE)
+head(matrix_counts_tibia)
+tail(matrix_counts_tibia)
+dim(matrix_counts_tibia)
+head(matrix_counts_tibia)
+```
+```{r}
+matrix_counts_hip <- read.table(file ="/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/brbseq-nf-pipeline/results/AMP0211/count_matrix/L270524LF02_01.read.counts.sampleIDs.detailed.txt",sep = "\t",header = TRUE)
+head(matrix_counts_hip)
+tail(matrix_counts_hip)
+dim(matrix_counts_hip)
+head(matrix_counts_hip)
+```
+
+
+```{r}
+ncol(matrix_counts_tibia)
+colnames(matrix_counts_tibia)
+```
+
+```{r}
+ncol(matrix_counts_hip)
+colnames(matrix_counts_hip)
+```
+
+
+```{r}
+# Remove the last column
+# New version do not need to be removed, Uknown columns is not there anymore...
+#the Gene_id or Gene_name which are in the position 1 and 2
+
+#matrix_counts <- matrix_counts[,-ncol(matrix_counts)]
+
+# Remove the last 5 rows
+matrix_counts_tibia <- matrix_counts_tibia[1:(nrow(matrix_counts_tibia)-5),]
+head(matrix_counts_tibia)
+tail(matrix_counts_tibia)
+dim(matrix_counts_tibia)
+colnames(matrix_counts_tibia)[3:ncol(matrix_counts_tibia)]
+```
+```{r}
+# Remove the last 5 rows
+matrix_counts_hip <- matrix_counts_hip[1:(nrow(matrix_counts_hip)-5),]
+head(matrix_counts_hip)
+tail(matrix_counts_hip)
+dim(matrix_counts_hip)
+colnames(matrix_counts_hip)[3:ncol(matrix_counts_hip)]
+```
+
+
+
+
+# Maybe later we need to divide it into Adipo,Pellet from Tibias and Hips
+```{r}
+# wrong_names <- c("mHH3.12P15...F3neg","mHH3.12P28.EW...F3neg","mHH3.12P28.Ctrl...F3neg")
+# colnames(matrix_counts)[3:104] <- gsub(x = colnames(matrix_counts)[3:104],pattern = "F3.$",replacement = "F3+")
+# for (wrong_name in wrong_names){
+#   correct_name <- gsub(pattern = "P",replacement = ".P",x = wrong_name)
+#   colnames(matrix_counts)[colnames(matrix_counts) == wrong_name] <- correct_name
+# }
+# 
+# 
+# matrix_aspcs <- matrix_counts[3:ncol(matrix_counts)] |> dplyr::select(matches("ASPCs"))
+# matrix_f3pos <- matrix_counts[3:ncol(matrix_counts)] |> dplyr::select(ends_with("F3+",))
+# matrix_f3neg <- matrix_counts[3:ncol(matrix_counts)] |> dplyr::select(ends_with("F3neg"))
+
+```
+
+# --- Add metadata table from the xlsx file
+```{r}
+md <- readxl::read_xlsx(path ="/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/metadata/sample_info_minimal_SIT.xlsx")
+md$sampleID
+```
+
+```{r}
+
+# Use mutate to format the sample IDs
+md_df <- md %>% 
+  dplyr::mutate(sampleID = gsub(" ", ".", sampleID)) %>%
+  dplyr::mutate(sampleID = paste0("X", sampleID))
+
+# Display the data frame with formatted sample IDs
+print(md_df)
+```
+
+
+
+```{r}
+md
+md_df
+
+```
+
+
+# Generate more columns for the data to plot
+```{r}
+md_df$sampleID
+# Split the sampleID column
+md_df_split <- strsplit(as.character(md_df$sampleID), "_", fixed = TRUE)
+
+# Create new columns
+md_df$sample_number <- sapply(md_df_split, function(x) x[1])
+md_df$tissue <- sapply(md_df_split, function(x) x[2])
+#md_df$health_status <- sapply(md_df_split, function(x) paste(x[3], x[4], sep = "_"))
+md_df$health_status <- sapply(md_df_split, function(x) paste(x[3], sep = "_"))
+md_df$tissue_celltype <- sapply(md_df_split, function(x) paste(x[4], sep = "_"))
+md_df$tissue_celltype_lowercase <- tolower(md_df$tissue_celltype)
+md_df$tissue_lowercase <- tolower(md_df$tissue)
+md_df$full_name <- md_df$sampleID
+
+
+# View the dataframe
+md_df
+
+```
+
+# Add gender, age and BMI to metadata.
+```{r}
+agbmi_df <- readxl::read_xlsx(path ="/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/metadata/age-gender-BRBseq.xlsx")
+agbmi_df
+
+# Add X infront of the sample ID and close non sclerotic with non.sclerotic.
+
+agbmi_df <- agbmi_df |>  
+  dplyr::mutate(`Sample ID` = gsub(" ", ".", `Sample ID`)) |> 
+  dplyr::mutate(`Sample ID` = paste0("X", `Sample ID`))
+agbmi_df
+
+md_df <- merge(x = md_df,y = agbmi_df,by.x = "sampleID",by.y = "Sample ID")
+
+```
+
+
+
+
+
+
+
+# Orientation of Data
+## Transposed Data (samples as rows, genes as columns)
+
+m <- prcomp(t(matrix_counts_hip[,3:ncol(matrix_counts_hip)]), scale. = TRUE, center = TRUE)
+Input Matrix: After transposing, each row represents a sample, and each column represents a gene.
+Interpretation: PCA will identify principal components based on the variance among samples across different genes.
+Results: The principal components will describe the variation between the samples. Each principal component (PC) is a linear combination of the gene expression values.
+
+
+## Non-Transposed Data (genes as rows, samples as columns)
+
+m <- prcomp(matrix_counts_hip[,3:ncol(matrix_counts_hip)], scale. = TRUE, center = TRUE)
+Input Matrix: Without transposing, each row represents a gene, and each column represents a sample.
+Interpretation: PCA will identify principal components based on the variance among genes across different samples.
+Results: The principal components will describe the variation between the genes. Each principal component (PC) is a linear combination of the sample values.
+
+
+# Choosing the Right Approach
+The choice of whether to transpose the data or not depends on what you want to analyze:
+
+## Analyzing Variation Between Samples: If your goal is to analyze how samples (conditions) vary based on gene expression profiles, you should transpose the data so that each row represents a sample. This will provide principal components that describe the differences between samples.
+m <- prcomp(t(matrix_counts_hip[,3:ncol(matrix_counts_hip)]), scale. = TRUE, center = TRUE)
+
+
+## Analyzing Variation Between Genes: If your goal is to analyze how genes vary across different samples, you should not transpose the data, keeping genes as rows and samples as columns. This will provide principal components that describe the differences between genes.
+m <- prcomp(matrix_counts_hip[,3:ncol(matrix_counts_hip)], scale. = TRUE, center = TRUE)
+
+
+
+# Clean rows that have gene expression for all the samples < 3 counts.
+```{r}
+# If no results of DEG obtained, we reduce stringency, so lower the number.
+
+ncol(matrix_counts_hip)
+dim(matrix_counts_hip[,3:ncol(matrix_counts_hip)][rowSums(matrix_counts_hip[,3:ncol(matrix_counts_hip)]) >= 30,])
+dim(matrix_counts_tibia[,3:ncol(matrix_counts_tibia)][rowSums(matrix_counts_tibia[,3:ncol(matrix_counts_tibia)]) >= 30,])
+
+```
+
+
+```{r}
+# row_sums <- rowSums(matrix_counts_hip[, 3:ncol(matrix_counts_hip)])
+# matrix_counts_hip_filtered <- matrix_counts_hip[row_sums >= 30,]
+# matrix_counts_hip_filtered
+```
+
+
+
+
+#Function for PCA, removing empty genes counts and empty columns if trnasposed.
+```{r}
+run_pca_structuring <- function(matrix_data, transpose=TRUE,filter_empty_samples_counts=30){
+  
+  data_matrix_raw <- matrix_data
+  data_matrix <- matrix_data[,3:ncol(matrix_data)]
+  row_sums = rowSums(data_matrix)
+  data_matrix_filtered = data_matrix[row_sums >= filter_empty_samples_counts,]
+  
+  # 
+  # # Remove constant/zero columns
+  # non_constant_columns <- apply(data_matrix_filtered, 2, function(x) sd(x) != 0)
+  # data_matrix_filtered <- data_matrix_filtered[, non_constant_columns]
+
+  # Check transpose
+  if (transpose){
+    data_matrix <- t(data_matrix)
+  }
+  
+  #Run PCA
+  
+  m <- prcomp(data_matrix_filtered,scale. = TRUE,center = TRUE)
+  #calculat the PC "%"'s
+  percentVar_obj <- m$sdev^2/sum(m$sdev^2)
+  
+  #Save as a df
+  m <- as.data.frame(m[2]$rotation)
+  m <- merge(x = m,y = md_df,by.x="row.names",by.y="full_name")
+  
+  return(list(
+    matrix_raw=data_matrix_raw,
+    matrix_pca=m,
+    percentVar_obj=percentVar_obj))
+  
+}
+
+```
+
+
+
+```{r}
+#Genes variability, typically biology difference across samples is stronger.. so it is also difficult to catch...
+m_pca_tibia <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = FALSE,filter_empty_samples_counts = 30)
+m_pca_hip <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = FALSE,filter_empty_samples_counts = 30)
+
+```
+
+
+# Plot the PCA function
+```{r}
+require("ggplot2")
+#shapes
+plot_the_pca <- function(pca_df,colors,pca,pcb,title,subtitle,colors_selection,shapes,shapes_selection,alphas=0.6,text_column="Row.names",percentVar_obj) {
+  
+  n <- ggplot(data = pca_df,aes(x = pca_df[[paste0("PC",substr(pca,start = 3,stop = 3))]],
+                                y = pca_df[[paste0("PC",substr(pcb,start = 3,stop = 3))]],
+                                color = pca_df[[colors]],
+                                shape = pca_df[[shapes]]))
+  # n <- n + geom_point(size=6)
+  n <- n + geom_jitter(position = position_jitter(width = 0.000000001,height = 0.000000001,seed = 123456),size=6,alpha=alphas)
+  n <- n + labs(title=paste0("PCA ",title),
+                #color = paste0(colors),
+                #shape = paste0(shapes),
+                subtitle = paste0(subtitle,"")) +
+    xlab(paste0("PC",substr(paste0("PC",substr(pca,start = 3,stop = 3)),start = 3,stop = 3),": ",
+                round(percentVar_obj[as.numeric(substr(paste0("PC",substr(pca,start = 3,stop = 3)),start = 3,stop = 3))] * 100,digits = 2), "% variance")) +
+    ylab(paste0("PC",substr(paste0("PC",substr(pcb,start = 3,stop = 3)),start = 3,stop = 3),": ",
+                round(percentVar_obj[as.numeric(substr(paste0("PC",substr(pcb,start = 3,stop = 3)),start = 3,stop = 3))] * 100,digits = 2), "% variance"))
+  n <- n + theme(panel.grid = element_blank(),
+                 panel.border = element_rect(fill = "transparent"),
+                 panel.background = element_rect(fill = "transparent"),
+                 legend.title = element_text(size=15),
+                 legend.text = element_text(size=12))
+  n <- n + geom_text(aes(label = pca_df[[text_column]]),color = "black", size = 2)
+
+  # n <- n + scale_color_manual(values = colors_selection)
+  # n <- n + scale_shape_manual(values = shapes_selection)
+  n
+  
+}
+```
+
+
+# --- Raw
+
+# Tibia
+```{r,fig.width=6,fig.height=3}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df
+plot_the_pca(pca_df = m_pca_tibia$matrix_pca,
+             percentVar_obj = m_pca_tibia$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias SVF and Adipocytes",
+             text_column = "sample_number")
+
+```
+
+
+
+# Hip
+```{r,fig.width=6,fig.height=3}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df
+plot_the_pca(pca_df = m_pca_hip$matrix_pca,
+             percentVar_obj = m_pca_hip$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Hips SVF and Adipocytes",
+             text_column = "sample_number")
+```
+
+
+```{r}
+m_pca_tibia_t <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = TRUE,filter_empty_samples_counts = 30)
+m_pca_hip_t <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = TRUE,filter_empty_samples_counts = 30)
+
+```
+
+# Tibia
+```{r,fig.width=6,fig.height=3}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df
+plot_the_pca(pca_df = m_pca_tibia_t$matrix_pca,
+             percentVar_obj = m_pca_tibia_t$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias SVF and Adipocyte Transposed",
+             text_column = "sample_number")
+
+```
+# Hip
+```{r,fig.width=6,fig.height=3}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df
+plot_the_pca(pca_df = m_pca_hip_t$matrix_pca,
+             percentVar_obj = m_pca_hip_t$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",
+             subtitle = "Hips SVF and Adipocyte Transposed",
+             text_column = "sample_number")
+
+```
+
+
+#############################
+#     Tibia Adipocytes      #
+#############################
+```{r,fig.width=6,fig.height=3}
+m_pca_tibia_transposed_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = TRUE,filter_empty_samples_counts = 30)
+
+plot_the_pca(pca_df = m_pca_tibia_transposed_adipocytes$matrix_pca,
+             percentVar_obj = m_pca_tibia_transposed_adipocytes$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias Adipocytes Transposed",
+             text_column = "sample_number")
+
+
+
+# Issued samples with low number of genes per sample from HTML report
+#107 tibia non sclerotic adipocyte
+#107 tibia sclerotic adipocyte
+##99 tibia sclerotic adipocyte
+
+
+#80 tibia non sclerotic pellet
+#163 tibia sclerotic pellet
+```
+
+#############################
+#     Tibia SVF/Pellet      #
+#############################
+```{r,fig.width=6,fig.height=3}
+m_pca_tibia_transposed_pellet <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = TRUE,filter_empty_samples_counts = 30)
+
+
+plot_the_pca(pca_df = m_pca_tibia_transposed_pellet$matrix_pca,
+             percentVar_obj = m_pca_tibia_transposed_pellet$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias Pellet Transposed",
+             text_column = "sample_number")
+
+# Issued samples with low number of genes per sample from HTML report
+
+#80 tibia non sclerotic pellet
+#163 tibia sclerotic pellet
+```
+
+```{r}
+
+```
+#############################
+#     Hip Adipocytes        #
+#############################
+```{r,fig.width=6,fig.height=3}
+m_pca_hip_transposed_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = TRUE,filter_empty_samples_counts = 30)
+
+plot_the_pca(pca_df = m_pca_hip_transposed_adipocytes$matrix_pca,
+             percentVar_obj = m_pca_hip_transposed_adipocytes$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Hips Adipocytes Transposed",
+             text_column = "sample_number")
+
+
+
+# Issued samples with low number of genes per sample from HTML report, expected to be also associated with low number of sequencing read per sample...
+#74 hip non sclerotic adipocyte
+#79 hip non sclerotic adipocyte
+#150 hip non sclerotic adipocyte
+
+#74 hip sclerotic adipocyte
+#79 hip sclerotic adipocyte
+
+#78 hip non sclerotic adipocyte
+#78 hip sclerotic adipocyte
+
+```
+
+
+#############################
+#     Hip SVF/Pellet      #
+#############################
+```{r,fig.width=6,fig.height=3}
+m_pca_hip_transposed_pellet <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = TRUE,filter_empty_samples_counts = 30)
+
+
+plot_the_pca(pca_df = m_pca_hip_transposed_pellet$matrix_pca,
+             percentVar_obj = m_pca_hip_transposed_pellet$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Hips Pellet Transposed",
+             text_column = "sample_number")
+
+# Issued samples with low number of genes per sample from HTML report
+
+ 
+#74 Hip non sclerotic pellet
+#74 Hip sclerotic pellet
+#78 hip non.sclerotic pellet
+#78 hip sclerotic pellet
+```
+
+```{r}
+md_df
+```
+
+
+```{r}
+plot_the_pca(pca_df = m_pca_hip_transposed_pellet$matrix_pca,
+             percentVar_obj = m_pca_hip_transposed_pellet$percentVar_obj,
+             colors =  "tissue_celltype_lowercase",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Hips Pellet Transposed",
+             text_column = "Age")
+```
+
+```{r}
+plot_the_pca(pca_df = m_pca_hip_transposed_pellet$matrix_pca,
+             percentVar_obj = m_pca_hip_transposed_pellet$percentVar_obj,
+             colors =  "Gender",
+             shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Hips Pellet Transposed",
+             text_column = "Age")
+```
+##########################
+# Test of QC for samples #
+##########################
+
+
+## Remove if are away for complexity or number of genes.
+
+```{r}
+m_pca_tibia$matrix_raw
+```
+### Plot the number of reads per sample from raw matrix of tibia.
+```{r,fig.width=25,fig.height=9}
+#matrix_counts_tibia
+#m_pca_tibia$matrix_raw
+
+sums_mm = colSums(m_pca_tibia$matrix_raw[3:ncol(m_pca_tibia$matrix_raw)])
+sums_mm <- data.frame(Column = colnames(m_pca_tibia$matrix_raw[3:ncol(m_pca_tibia$matrix_raw)]), Sum = sums_mm)
+sums_mm$Column <-tolower(sums_mm$Column)
+
+
+
+# Categorize the groups based on the Column names
+sums_mm$Group <- ifelse(grepl("tibia_non.sclerotic_adipocyte", sums_mm$Column), "TNSA",
+                   ifelse(grepl("tibia_sclerotic_adipocyte", sums_mm$Column), "TSA",
+                          ifelse(grepl("tibia_non.sclerotic_pellet", sums_mm$Column), "TNSP", "TSP")))
+
+sums_mm
+# Create a custom color palette
+color_palette <- c("TNSA" = "#00296b", "TSA" = "#1e91d0", "TNSP" = "#faa819","TSP"="#f37520")
+```
+
+
+```{r,fig.width=29,fig.height=14}
+library(ggplot2)
+mean_sum <- mean(sums_mm$Sum)
+quantiles <- quantile(sums_mm$Sum, probs = c(0.25, 0.75,0.90))
+
+p <- ggplot(sums_mm, aes(x = reorder(Column, Sum), y = Sum, fill = Group)) +
+#ggplot(sums_mm, aes(x = Column, y = Sum, fill = Group)) +
+  
+
+  geom_bar(stat = "identity") +
+  labs(title = "Counts Sums",
+       x = "Samples",
+       y = "Sum of all counts") +
+  scale_fill_manual(values = color_palette) +
+  geom_hline(aes(yintercept = mean_sum, color = "Mean"), linetype = "dashed", size = 1) +
+  geom_hline(aes(yintercept = quantiles[1], color = "25th Percentile"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = quantiles[2], color = "75th Percentile"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = quantiles[3], color = "90th Percentile"), linetype = "dotted", size = 1) +
+  scale_color_manual(values = c("red", "blue", "green","#903498"),
+                     breaks = c("Mean", "25th Percentile", "75th Percentile", "90th Percentile"),
+                     name = "Statistics") +  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        panel.background = element_blank(),  # Remove panel background
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        )  # Rotate x-axis labels for better visibility
+
+plotly::ggplotly(p)
+```
+# TIBIA Samples out
+
+#X163   TSP
+#X99    TSA
+#X107   TNSA TSA TNSP
+#X80    TNSP TNSA TSP
+#X105   TSP TNSP
+#X148   TSP
+#X104   TSA TSP
+#X164   TSA 
+#X109   TNSP
+# we filter out around same proportions if 25% in TIBIA is around 700k we filtered 407265 and in HIP 25% is 1M in Hip, we filterd 791K
+
+
+```{r}
+sums_mm |> dplyr::filter(Sum < 407265)
+sums_mm_tibia <- sums_mm |> dplyr::filter(!Sum < 407265)
+sums_mm_tibia$Samples <- rownames(sums_mm_tibia)
+sums_mm_tibia
+```
+
+
+
+
+# HIP
+
+```{r}
+m_pca_hip$matrix_raw
+```
+### Plot the number of reads per sample from raw matrix of tibia.
+```{r,fig.width=25,fig.height=9}
+#matrix_counts_hip
+#m_pca_hip$matrix_raw
+sums_mm = colSums(m_pca_hip$matrix_raw[3:ncol(m_pca_hip$matrix_raw)])
+sums_mm <- data.frame(Column = colnames(m_pca_hip$matrix_raw[3:ncol(m_pca_hip$matrix_raw)]), Sum = sums_mm)
+
+
+sums_mm$Column <-tolower(sums_mm$Column)
+
+
+# Categorize the groups based on the Column names
+sums_mm$Group <- ifelse(grepl("hip_non.sclerotic_adipocyte", sums_mm$Column), "HNSA",
+                   ifelse(grepl("hip_sclerotic_adipocyte", sums_mm$Column), "HSA",
+                          ifelse(grepl("hip_non.sclerotic_pellet", sums_mm$Column), "HNSP", "HSP")))
+
+sums_mm
+# Create a custom color palette
+color_palette <- c("HNSA" = "#00296b", "HSA" = "#1e91d0", "HNSP" = "#faa819","HSP"="#f37520")
+```
+
+
+```{r,fig.width=25,fig.height=9}
+library(ggplot2)
+c <- mean(sums_mm$Sum)
+quantiles <- quantile(sums_mm$Sum, probs = c(0.25, 0.75,0.90))
+
+p <- ggplot(sums_mm, aes(x = reorder(Column, Sum), y = Sum, fill = Group)) +
+#ggplot(sums_mm, aes(x = Column, y = Sum, fill = Group)) +
+  
+
+  geom_bar(stat = "identity") +
+  labs(title = "Counts Sums",
+       x = "Samples",
+       y = "Sum of all counts") +
+  scale_fill_manual(values = color_palette) +
+  geom_hline(aes(yintercept = mean_sum, color = "Mean"), linetype = "dashed", size = 1) +
+  geom_hline(aes(yintercept = quantiles[1], color = "25th Percentile"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = quantiles[2], color = "75th Percentile"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = quantiles[3], color = "90th Percentile"), linetype = "dotted", size = 1) +
+  scale_color_manual(values = c("red", "blue", "green","#903498"),
+                     breaks = c("Mean", "25th Percentile", "75th Percentile", "90th Percentile"),
+                     name = "Statistics") +  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        panel.background = element_blank(),  # Remove panel background
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        )  # Rotate x-axis labels for better visibility
+
+plotly::ggplotly(p)
+```
+# HIP Samples out
+#####X78 - 4
+#####X74 -4
+#####X79 -2 HNSA and HSA
+#####X150 HNSA
+#####X154 HNSP
+# Removed all the samples with less than 791286 counts in Hip.
+
+# Filter Samples
+```{r}
+sums_mm_hip <- sums_mm |> dplyr::filter(!Sum < 791286)
+sums_mm |> dplyr::filter(Sum < 791286)
+sums_mm_hip$Samples <- rownames(sums_mm_hip)
+sums_mm_hip
+
+```
+
+
+# Comparisons
+### Use the samples cleaned objects
+sums_mm_tibia
+sums_mm_hip 
+
+# filter out the samples we removed before
+```{r}
+sums_mm_tibia
+sums_mm_hip
+#matrix_counts_tibia
+#matrix_counts_hip
+
+m_pca_tibia$matrix_raw_filtered_samples_for_DEG <- m_pca_tibia$matrix_raw[,rownames(sums_mm_tibia)]
+m_pca_hip$matrix_raw_filtered_samples_for_DEG <- m_pca_hip$matrix_raw[,rownames(sums_mm_hip)]
+#using dplyr
+#m_pca_tibia$matrix_raw_filtered_samples_for_DEG <- m_pca_tibia$matrix_raw |>   select(all_of(rownames(sums_mm_tibia)))
+```
+
+
+```{r}
+# Merge back the metadata and the selected samples 
+md_df_tibia <- merge(x=md_df,y = sums_mm_tibia,by.x="sampleID",by.y="Samples")
+md_df_hip <- merge(x=md_df,y = sums_mm_hip,by.x="sampleID",by.y="Samples")
+
+
+
+
+```
+#############
+### EDGER ###
+#############
+
+### LRT: Suitable for complex designs but may not fully account for variability, potentially leading to inflated false positives.
+### QLF: Provides robust results by modeling extra variability through quasi-likelihood methods and shrinkage estimators. It yields more accurate p-values and better control over false positives.
+
+# --- Normalize
+```{r,fig.width=12,fig.height=6}
+#############
+#   edgeR   #
+#############
+library(data.table)
+library(edgeR)
+#Run edgeR on the COMBATseq batch corrected data.
+message("Builduing the DEG data list for edgeR.")
+
+#.1- Build DGE list and normalize
+y = DGEList(counts = m_pca_tibia$matrix_raw_filtered_samples_for_DEG, group = md_df_tibia$Group, genes = m_pca_tibia$matrix_raw[,2])
+#perform TMM normalization
+message("Normalizing using TMM.\n")
+y_norm <- calcNormFactors(object = y,method = "TMM")
+y_normalized_corrected <- cpm(y = y_norm,normalized.lib.sizes = TRUE)
+rownames(y_normalized_corrected) <- y$genes$genes
+
+#y_normalized_corrected_pcas <- prcomp(log2(y_normalized_corrected + 1))
+y_normalized_corrected_pcas <- prcomp(y_normalized_corrected,center = TRUE,scale. = TRUE)
+#calculat the PC "%"'s
+percentVar_obj <- y_normalized_corrected_pcas$sdev^2/sum(y_normalized_corrected_pcas$sdev^2)
+#Save as a df
+y_normalized_corrected_pcas_df <- as.data.frame(y_normalized_corrected_pcas[2]$rotation)
+y_normalized_corrected_pcas_df <- merge(y_normalized_corrected_pcas_df,md_df_tibia, by.x = "row.names", by.y = "sampleID")
+# y_normalized_corrected_pcas_df[,c(1,18)]
+message("Done")
+message("Plot ready.")
+
+
+# y_normalized_corrected_pcas_df <- y_normalized_corrected_pcas_df |> dplyr::mutate(Sample2 = sub("^(.*?)\\..*", "\\1", Sample))
+# y_normalized_corrected_pcas_df <- y_normalized_corrected_pcas_df |> dplyr::mutate(Sample3 = sub(".*?\\.(.*)", "\\1", Sample))
+
+
+#colnames(md_df_tibia)
+md_df_tibia$Age <- as.factor(md_df_tibia$Age)
+for (column_to_plot in c("Tissue/cell type","Age","health_status","Group","Plate.ID")) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+                     percentVar_obj = percentVar_obj,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias (Normalized TMM)",subtitle = "TSA TSP TNSA TNSP",
+                     text_column = "sample_number"))
+  }
+
+```
+
+
+# EDGER Normalization function
+```{r}
+library(edgeR)
+library(dplyr)
+
+normalize_and_pca <- function(count_matrix, gene_info, metadata) {
+  # Check if inputs are data frames or matrices
+  if (!is.data.frame(count_matrix) && !is.matrix(count_matrix)) {
+    stop("count_matrix must be a data frame or matrix.")
+  # }
+  # if (!is.factor(group)) {
+  #   stop("group must be a factor.")
+  }
+  if (!is.vector(gene_info) && !is.list(gene_info)) {
+    stop("gene_info must be a vector or list")
+  }
+  if (!is.data.frame(metadata)) {
+    stop("metadata must be a data frame.")
+  }
+  
+  # Build DGE list and normalize
+  message("Building DGEList and normalizing using TMM.\n")
+  y <- DGEList(counts = count_matrix, group = metadata$Group, genes = gene_info)
+  y_norm <- calcNormFactors(y, method = "TMM")
+  y_normalized_corrected <- cpm(y_norm, normalized.lib.sizes = TRUE)
+  rownames(y_normalized_corrected) <- y$genes$genes
+  
+  # Perform PCA
+  message("Performing PCA.\n")
+  y_normalized_corrected_pcas <- prcomp(y_normalized_corrected, center = TRUE, scale. = TRUE)
+  
+  # Calculate the percentage of variance for each principal component
+  percentVar_obj <- y_normalized_corrected_pcas$sdev^2 / sum(y_normalized_corrected_pcas$sdev^2)
+  
+  # Save PCA results as a data frame
+  y_normalized_corrected_pcas_df <- as.data.frame(y_normalized_corrected_pcas[2]$rotation)
+  
+  # Merge PCA results with metadata
+  y_normalized_corrected_pcas_df <- merge(y_normalized_corrected_pcas_df, metadata, by.x = "row.names", by.y = "sampleID")
+  
+  # # Optionally mutate the sample names
+  # y_normalized_corrected_pcas_df <- y_normalized_corrected_pcas_df %>%
+  #   mutate(Sample2 = sub("^(.*?)\\..*", "\\1", Row.names),
+  #          Sample3 = sub(".*?\\.(.*)", "\\1", Row.names))
+  # 
+  message("Done")
+  message("ready to Plot ")
+  
+  return(list(
+    pca_results = y_normalized_corrected_pcas_df,
+    percent_variance = percentVar_obj
+  ))
+}
+
+# Example usage:
+
+results <- normalize_and_pca(
+  count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG,
+  gene_info = m_pca_tibia$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_tibia
+)
+
+#md_df_tibia$Age <- as.factor(md_df_tibia$Age)
+for (column_to_plot in c("Tissue/cell type","Age","health_status","Group", "Plate.ID")) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias (Normalized TMM)",subtitle = "TSA TSP TNSA TNSP",
+                     text_column = "sample_number"))
+}
+
+```
+
+# Tibia only pellet
+```{r warning=FALSE}
+md_df_tibia |>
+  dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+  dplyr::pull(sampleID)
+# colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet"))
+
+
+results <- normalize_and_pca(
+  count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet") |> dplyr::pull(sampleID)],
+  gene_info = m_pca_tibia$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet")
+)
+
+
+for (column_to_plot in c(colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias (Normalized TMM)",subtitle = "TSP TNSP",
+                     text_column = "sample_number"))
+}
+
+```
+#Tibia only adipocyte
+```{r warning=FALSE}
+md_df_tibia |>
+  dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+  dplyr::pull(sampleID)
+# colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet"))
+
+
+
+results <- normalize_and_pca(
+  count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte") |> dplyr::pull(sampleID)],
+  gene_info = m_pca_tibia$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")
+)
+
+for (column_to_plot in c(colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias (Normalized TMM)",subtitle = "TSA TNSA",
+                     text_column = "sample_number"))
+}
+```
+
+########################
+# Leas observation, might be the super sclerotic cluster female based?
+# Might create a super slerotic samples and compare them to non-sclerotic or mixed? (Wait to confirm with slides)
+#########################################################################################
+
+
+
+###########################
+#      HIP                #
+###########################
+# Normalized PCA
+
+
+#Hip only adipocyte
+```{r warning=FALSE}
+md_df_hip |>
+  dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+  dplyr::pull(sampleID)
+# colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet"))
+
+
+
+results <- normalize_and_pca(
+  count_matrix = m_pca_hip$matrix_raw_filtered_samples_for_DEG[,md_df_hip |>
+                                                                 dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                 dplyr::pull(sampleID)],
+  gene_info = m_pca_tibia$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")
+)
+
+for (column_to_plot in c(colnames(md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Hips (Normalized TMM)",subtitle = "HSA HNSA",
+                     text_column = "sample_number"))
+}
+```
+#Hip only pellet
+```{r warning=FALSE}
+md_df_hip |>
+  dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+  dplyr::pull(sampleID)
+# colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet"))
+
+
+
+results <- normalize_and_pca(
+  count_matrix = m_pca_hip$matrix_raw_filtered_samples_for_DEG[,md_df_hip |>
+                                                                 dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                 dplyr::pull(sampleID)],
+  gene_info = m_pca_tibia$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "pellet")
+)
+
+for (column_to_plot in c(colnames(md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "pellet")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Hips (Normalized TMM)",subtitle = "HSP HNSP",
+                     text_column = "sample_number"))
+}
+```
+
+# Add up and check differences only between sclerotic and non sclerotic
+# Generate metadata
+```{r}
+md_df_tibia$barcode_tissue <- paste0(md_df_tibia$barcode,"_tibia")
+md_df_tibia$Plate.ID_tissue <- paste0(md_df_tibia$Plate.ID,"_tibia")
+md_df_hip$barcode_tissue <- paste0(md_df_hip$barcode,"_hip")
+md_df_hip$Plate.ID_tissue <- paste0(md_df_hip$Plate.ID,"_hip")
+
+md_df_bone <- rbind(md_df_tibia,md_df_hip)
+
+md_df_bone |>
+  dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+  dplyr::pull(sampleID)
+# colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet"))
+```
+
+#Generate matrix for PCA of samples together.
+```{r}
+# m_pca_tibia <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = FALSE,filter_empty_samples_counts = 30)
+# m_pca_hip <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = FALSE,filter_empty_samples_counts = 30)
+
+m_samples_bone <- cbind(m_pca_tibia$matrix_raw,m_pca_hip$matrix_raw[3:ncol(m_pca_hip$matrix_raw)])
+m_pca_samples_bone <- run_pca_structuring(matrix_data = m_samples_bone,transpose = FALSE,filter_empty_samples_counts = 30)
+```
+
+
+```{r,fig.width=12,fig.height=6}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df_bone
+
+plot_the_pca(pca_df = m_pca_samples_bone$matrix_pca,
+             percentVar_obj = m_pca_samples_bone$percentVar_obj,
+             colors =  "tissue_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias and Hips",
+             text_column = "tissue_celltype_lowercase")
+
+
+
+plotly::ggplotly(
+  plot_the_pca(pca_df = m_pca_samples_bone$matrix_pca,
+             percentVar_obj = m_pca_samples_bone$percentVar_obj,
+             colors =  "tissue_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias and Hips",
+             text_column = "sample_number"))
+```
+
+
+```{r,fig.width=12,fig.height=6}
+### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# Generate the columns in the md_df_bone
+
+plot_the_pca(pca_df = m_pca_samples_bone$matrix_pca,
+             percentVar_obj = m_pca_samples_bone$percentVar_obj,
+             colors =  "tissue_lowercase",shapes = "health_status",
+             pca = "PC1",pcb = "PC2",
+             title="PCA of RNA-seq Raw Data",subtitle = "Tibias and Hips",
+             text_column = "sample_number")
+
+```
+#above are all the samples including also the "bad samples"
+
+
+
+
+# filtered samples from all together
+```{r}
+m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG <- m_pca_samples_bone$matrix_raw[,md_df_bone$sampleID]
+```
+
+# Sclerotic all
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "sclerotic") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TSA TSP HSA HSP",
+                     text_column = "sample_number"))
+}
+
+# Adipo sclerotic 
+# Adipo non sclerotic
+```
+# Non sclerotic all
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "non.sclerotic") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TNSA TNSP HNSA HNSP",
+                     text_column = "sample_number"))
+}
+```
+
+
+
+
+#Sclerotic only Pellets
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TSP HSP",
+                     text_column = "sample_number"))
+}
+```
+# Non sclerotic only pellets
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TNSP HNSP",
+                     text_column = "sample_number"))
+}
+```
+# Sclerotic adipocytes only
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TSA HSA",
+                     text_column = "sample_number"))
+}
+```
+
+# Non scleoritc adipocytes only
+```{r warning=FALSE}
+results <- normalize_and_pca(
+  count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                   #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                   dplyr::pull(sampleID)],
+  gene_info = m_pca_samples_bone$matrix_raw[, 2],  # Ensure this is a data frame or matrix
+  metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte")
+)
+
+for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte")))) {
+  #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
+  print(plot_the_pca(pca_df = results$pca_results,
+                     percentVar_obj = results$percent_variance,
+                     colors = column_to_plot,
+                     shapes = "Gender",
+                     pca = "PC1", pcb = "PC2",
+                     title = "Tibias and Hips (Normalized TMM)",subtitle = "TNSA HNSA",
+                     text_column = "sample_number"))
+}
+```
+
+###################
+#       DEG       #
+###################
+```{r}
+
+# Define function to test for differential expression
+
+test_diff_exp <- function(counts, conditions,ensembl_genes,batch=NULL) {
+  
+  # Argument validation
+  if (!is.data.frame(counts) || !is.character(conditions) || is.null(ensembl_genes)) {
+    stop("Invalid input data.")
+  }
+  
+  
+  # Create the dataframe for the normalization
+  # Create a DGEList object and filter the genes
+  # d <- DGEList(counts)
+  # keep <- rowSums(cpm(d) > 1) >= 2
+  # d <- d[keep,]
+  d = DGEList(counts = counts, group = conditions, genes = ensembl_genes)
+  #perform TMM normalization
+  
+   # Filter out lowly expressed genes (less than 30 counts across all samples)
+  #This creates a logical vector where each entry indicates whether the corresponding gene has a CPM of at least 1 in at least 2 samples.
+  keep <- rowSums(cpm(d) >= 1) >= 2 & rowSums(d$counts) >= 30
+  d <- d[keep, , keep.lib.sizes = FALSE]
+  
+  
+  message("Normalizing using TMM.\n")
+  d <- calcNormFactors(d)
+  
+  # Model design
+  design <- model.matrix(~0 + conditions)
+  
+  # Fit the NB GLMs with QL methods
+  d <- estimateDisp(d, design)
+  # y_norm <- calcNormFactors(object = y,method = "TMM")
+  # y_normalized_corrected <- cpm(y = y_norm,normalized.lib.sizes = TRUE)
+  # rownames(y_normalized_corrected) <- y$genes$genes
+  
+  
+  
+  # Create a factor for the conditions
+  f <- factor(conditions)#,levels = conditions)
+  
+  # Fit the negative binomial models and perform tests for differential expression
+  colnames(design) <- levels(f)
+  
+  Sys.sleep(1)
+  # Loop over each contrast and perform test for differential expression
+  results_list <- list()
+  combinations <- combn(levels(f), 2, simplify = FALSE)
+  contrast_labels <- sapply(combinations, function(x) paste(x, collapse = "-"))
+  require(edgeR)
+  # Loop through all the contrasts and perform the analysis
+  for (i in seq_along(contrast_labels)) {
+    # Create the contrast matrix for this comparison
+    contrast_matrix <- makeContrasts(contrasts = contrast_labels[[i]],levels = design)
+    # contrast_matrix
+    # Fit the GLM model
+    
+  # Get the comparison name
+    comparison_name <- paste(combinations[[i]], collapse = "-vs-")
+    message(paste0("Running contrast on: ",comparison_name))
+    fit <- glmQLFit(y = d, design = design)
+    
+    
+    # Perform differential expression analysis
+
+    res <- glmQLFTest(fit, contrast = contrast_matrix)
+    
+     # Create a column with the rowSums of the samples in the comparison.
+    value1 <- strsplit(x = contrast_labels[[i]], split = "-")[[1]][1]
+    value2 <- strsplit(x = contrast_labels[[i]], split = "-")[[1]][2]
+    
+    subset_rows_v1 <- d$samples[d$samples$group == value1, , drop = FALSE]
+    subset_rows_v2 <- d$samples[d$samples$group == value2, , drop = FALSE]
+    
+    sample_names_v1 <- rownames(subset_rows_v1)
+    sample_names_v2 <- rownames(subset_rows_v2)
+    
+    colSum_sample_v1 <- as.matrix(rowSums(d$counts[,sample_names_v1]))
+    colSum_sample_v2 <- as.matrix(rowSums(d$counts[,sample_names_v2]))
+    
+    colnames(colSum_sample_v1) <- paste0("colSums_",subset_rows_v1$group[1])
+    colnames(colSum_sample_v2) <- paste0("colSums_",subset_rows_v2$group[1])
+    
+    colsums_samples <- as.data.frame(d$counts[,c(sample_names_v1,sample_names_v2)])
+    colsums_samples$genes <- d$genes$genes
+    
+    colsums_samples$C1 <- colSum_sample_v1
+    colsums_samples$C2 <- colSum_sample_v2
+    
+    names_to_add_after_colsums <- colnames(colsums_samples)
+    
+    names_to_add_after_colsums[length(names_to_add_after_colsums) -1] <- paste0("colSums_",subset_rows_v1$group[1])
+    names_to_add_after_colsums[length(names_to_add_after_colsums)] <- paste0("colSums_",subset_rows_v2$group[1])
+    
+    colnames(colsums_samples) <- names_to_add_after_colsums
+    
+    # Save
+    Sys.sleep(1)
+    
+    # Store the results in the results_list
+    
+    contrastName <- paste0(gsub(x = gsub(x = strsplit(x = res$comparison,split = "-1")[[1]][1],pattern = "1\\*",replacement = ""),pattern = "\\ $",replacement = ""),
+                           "_vs_",
+                           gsub(x = strsplit(x = res$comparison,split = "-1")[[1]][2],pattern = "\\*",replacement = ""))
+    
+    message(paste0("It performed the following comparison: ",contrastName))
+    results_list[[i]] <- list(name = comparison_name, results = topTags(res, n = Inf),colsums_samples=colsums_samples)}
+  return(results_list)
+}
+```
+
+# Differential gene expression.
+
+## Separate the data in smaller groups.
+
+```{r}
+#tibia#hip#adipo#pellet#sclerotic#non_sclerotic
+# Done
+# tibias-> sclerotic vs nsclerotic
+# Adipocytes Non-sclerotic vs Sclerotic of Tibia
+# Pellet Non-sclerotic vs Sclerotic of Tibia
+
+# hip-> sclerotic vs nsclerotic
+# Adipocytes Non-sclerotic vs Sclerotic of Hip
+# Pellet Non-sclerotic vs Sclerotic of Hip
+```
+
+## HIP Adipocytes Sclerotic vs non sclerotic
+```{r}
+hip_adipocytes_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_hip$matrix_raw_filtered_samples_for_DEG[,md_df_hip |>
+                                                                                                                   dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_hip |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(Group),
+                                                          batch = md_df_hip |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_hip$matrix_raw[,2])
+```
+```{r}
+hip_adipocytes_sclerotic_vs_non_sclerotic
+hip_adipocytes_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.25)
+write.table(hip_adipocytes_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/hip/",hip_adipocytes_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+
+```
+
+
+
+## HIP Pellet Sclerotic vs non sclerotic
+```{r}
+hip_pellet_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_hip$matrix_raw_filtered_samples_for_DEG[,md_df_hip |>
+                                                                                                                   dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_hip |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(Group),
+                                                          batch = md_df_hip |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_hip$matrix_raw[,2])
+```
+
+```{r}
+hip_pellet_sclerotic_vs_non_sclerotic[[1]]
+hip_pellet_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(hip_pellet_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/hip/",hip_pellet_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+
+```
+# Hip sclerotic vs non sclerotic
+
+```{r}
+hip_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_hip$matrix_raw_filtered_samples_for_DEG[,md_df_hip |>
+                                                                                                                   #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_hip |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(health_status),
+                                                          batch = md_df_hip |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_hip$matrix_raw[,2])
+```
+```{r}
+hip_sclerotic_vs_non_sclerotic[[1]]
+hip_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(hip_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/hip/",hip_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+
+```
+```{r}
+
+```
+
+
+## Tibia Adipocytes Sclerotic vs non sclerotic
+```{r}
+tibia_adipocytes_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |>
+                                                                                                                   dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_tibia |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(Group),
+                                                          batch = md_df_tibia |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_tibia$matrix_raw[,2])
+```
+
+```{r}
+tibia_adipocytes_sclerotic_vs_non_sclerotic
+tibia_adipocytes_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(tibia_adipocytes_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/tibia/",tibia_adipocytes_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+
+
+## TIBIA Pellet Sclerotic vs non sclerotic
+```{r}
+tibia_pellet_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |>
+                                                                                                                   dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_tibia |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(Group),
+                                                          batch = md_df_tibia |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_tibia$matrix_raw[,2])
+```
+
+```{r}
+tibia_pellet_sclerotic_vs_non_sclerotic[[1]]
+tibia_pellet_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(tibia_pellet_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/tibia/",tibia_pellet_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+
+```
+# Tibia sclerotic vs non sclerotic
+
+```{r}
+tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |>
+                                                                                                                   #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                                   #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                                   dplyr::pull(sampleID)],
+                                                          conditions = md_df_tibia |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(health_status),
+                                                          batch = md_df_tibia |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_tibia$matrix_raw[,2])
+```
+
+```{r}
+tibia_sclerotic_vs_non_sclerotic
+tibia_sclerotic_vs_non_sclerotic[[1]]
+tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(tibia_sclerotic_vs_non_sclerotic[[1]]$results$table,paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/tibia/",tibia_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+
+
+```{r}
+
+```
+
+```{r}
+bone_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+```{r}
+bone_hip_vs_tibia[[1]]
+bone_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/",bone_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+
+```{r}
+bone_non_sclerotic_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::filter(health_status == "non.sclerotic") |> 
+                                                                                                     dplyr::pull(sampleID)],
+                                             
+                                             conditions = md_df_bone |>
+                                               #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                               #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                               dplyr::filter(health_status == "non.sclerotic") |> 
+                                               dplyr::pull(tissue_lowercase),
+                                             batch = md_df_bone |>
+                                               #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                               #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                               dplyr::filter(health_status == "non.sclerotic") |> 
+                                               dplyr::pull(sample_number),
+                                             ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+bone_non_sclerotic_hip_vs_tibia
+bone_non_sclerotic_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_non_sclerotic_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/non_sclerotic_",bone_non_sclerotic_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+```{r}
+bone_sclerotic_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::filter(health_status == "sclerotic") |> 
+                                                                                                     dplyr::pull(sampleID)],
+                                             
+                                             conditions = md_df_bone |>
+                                               #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                               #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                               dplyr::filter(health_status == "sclerotic") |> 
+                                               dplyr::pull(tissue_lowercase),
+                                             batch = md_df_bone |>
+                                               #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                               #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                               dplyr::filter(health_status == "sclerotic") |> 
+                                               dplyr::pull(sample_number),
+                                             ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+```{r}
+bone_sclerotic_hip_vs_tibia
+bone_sclerotic_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_sclerotic_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/sclerotic_",bone_sclerotic_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+
+
+
+```{r}
+bone_adipocytes_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+```{r}
+bone_adipocytes_hip_vs_tibia
+bone_adipocytes_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_adipocytes_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/adipocytes_",bone_adipocytes_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)
+```
+```{r}
+bone_pellet_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+```{r}
+bone_pellet_hip_vs_tibia
+bone_pellet_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_pellet_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/pellet_",bone_pellet_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+
+
+
+
+```{r}
+# Bone Tibia vs Hip 
+# Bone Adipocyte -> tibia vs Hip
+# Bone Pellet -> tibia vs Hip
+# Bone Non Sclerotic -> tibia vs hip
+# Bone Sclerotic -> tibia vs hip
+
+
+#Done
+```
+
+
+# tibia vs  hip sclerotic pellet
+
+```{r}
+bone_sclerotic_pellet_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+```{r}
+bone_sclerotic_pellet_hip_vs_tibia
+bone_sclerotic_pellet_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_sclerotic_pellet_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/sclerotic_pellet_",bone_sclerotic_pellet_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+
+# Add tibia vs  hip non.sclerotic pellet
+```{r}
+bone_non_sclerotic_pellet_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+bone_non_sclerotic_pellet_hip_vs_tibia
+bone_non_sclerotic_pellet_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_non_sclerotic_pellet_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/non_sclerotic_pellet_",bone_non_sclerotic_pellet_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+
+
+# Add tibia vs  hip non.sclerotic adipocyte
+```{r}
+bone_non_sclerotic_adipocyte_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+bone_non_sclerotic_adipocyte_hip_vs_tibia
+bone_non_sclerotic_adipocyte_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_non_sclerotic_adipocyte_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/non_sclerotic_adipocyte_",bone_non_sclerotic_adipocyte_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+# tibia vs  hip non.sclerotic adipocyte
+```{r}
+bone_sclerotic_adipocyte_hip_vs_tibia <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(tissue_lowercase),
+                                                          batch = md_df_bone |>
+                                                            #dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+bone_sclerotic_adipocyte_hip_vs_tibia
+bone_sclerotic_adipocyte_hip_vs_tibia[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(bone_sclerotic_adipocyte_hip_vs_tibia[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/bone/sclerotic_adipocyte_",bone_sclerotic_adipocyte_hip_vs_tibia[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+# Adipocytes bone
+## Non-sclerotic vs Sclerotic 
+
+```{r}
+adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(health_status),
+                                                          batch = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
+                                                            #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic
+adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/adipocytes/adipocyte_tibia_and_hip",adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+# pellets bone
+## Non-sclerotic vs Sclerotic
+
+```{r}
+pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(counts = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
+                                                                                                     dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                                                                     #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                                                                     dplyr::pull(sampleID)],
+                                                          conditions = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(health_status),
+                                                          batch = md_df_bone |>
+                                                            dplyr::filter(tissue_celltype_lowercase == "pellet") |>
+                                                            #dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte") |>
+                                                            dplyr::pull(sample_number),
+                                                          ensembl_genes = m_pca_samples_bone$matrix_raw[,2])
+```
+
+
+```{r}
+pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
+pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+write.table(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table,
+            paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/pellets/pellet_tibia_and_hip",pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$name,".txt"),
+            sep = "\t",
+            row.names = FALSE,
+            col.names = TRUE)  
+```
+```{r}
+```
+
+
+```{r}
+```
+
+```{r}
+
+```
+
+```{r}
+install.packages("enrichR")
+library(enrichR)
+```
+
+
+```{r}
+setEnrichrSite("Enrichr") # Human genes
+```
+```{r}
+
+websiteLive <- getOption("enrichR.live")
+if (websiteLive) {
+    listEnrichrSites()
+    setEnrichrSite("Enrichr") # Human genes   
+}
+if (websiteLive) dbs <- listEnrichrDbs()
+#dbs <- listEnrichrDbs()
+dbs
+```
+
+
+```{r}
+pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+
+message(paste0("Working on sample: ",pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$name))
+
+dbs <- c('GO_Cellular_Component_2017','GO_Molecular_Function_2017','GO_Biological_Process_2017','CellMarker_2024')
+enriched <- enrichr(genes = c(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05) |> 
+                      #dplyr::filter(!grepl(x = genes,pattern = "^Gm\\d+")) |>
+                      #dplyr::filter(!grepl(x = genes,pattern = "*Rik$")) |> 
+                      dplyr::filter(!is.na(genes)) |> 
+                      dplyr::filter(genes != "") |>
+                      dplyr::filter(!grepl(x = genes, pattern = "ENSG")) |>
+                      dplyr::pull(genes)), databases = dbs)
+
+enriched
+```
+
+
+```{r}
+enriched[["GO_Biological_Process_2017"]]
+# plot the enrichment 3 from dbs GOBP
+```
+
+
+```{r}
+enriched
+enriched$CellMarker_2024
+```
+
+
+```{r}
+plotEnrich(enriched[[4]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+```
+
+# check universe.
+```{r}
+library(ggplot2)
+library(ggraph)
+
+lapply(names(enriched), function(y) {
+  x = pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$name
+  tryCatch({
+    message("Save the enrichment for comparison: ",
+            x,
+            " and enrichment: ", y)
+    # Save the enrichment to a table
+    write.table(x = enriched[[y]],
+                file = paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/pellets/Enrichr/", y,
+                              "_for_comparison_",
+                              x,
+                              ".txt"),
+                sep = "\t",
+                row.names = FALSE,
+                col.names = TRUE)
+    message("Save the plot for comparison: ", x, " and enrichment: ", y)
+    # Save the plot to a PDF
+    ggsave(plot = plotEnrich(enriched[[y]],
+                             showTerms = 30, numChar = 40, y = "Count",
+                             orderBy = "Adjusted.P.value",
+                             title = paste0("Enrichment analysis by Enrichr", y, " in: ", x)),
+           filename = paste0("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis/DGE_Results_tables/pellets/Enrichr/",
+                             y,
+                             "_for_comparison_",
+                             x,
+                             "_barplot.pdf"),
+           device = "pdf",
+           width = 12,
+           height = 9)
+    },
+    error = function(e) {
+      message("There was an error with enrichment ", y, " in comparison ", x, ": ", e)
+      })
+})
+
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+```{r}
+# If 3 samples are from one dataset are bad... we remove it all..
+```
+
+
+

@@ -1,0 +1,14 @@
+*.RData
+*.Rhistory
+*.fastqz
+*.fastq
+*.fasta
+*.zip
+*.tar
+*.h5
+*.h5*
+*.bw
+*.gz
+brbseq-nf-pipeline/results/AMP0211/bigwigs/*
+brbseq-nf-pipeline/results/AMP0211/count_matrix/*
+

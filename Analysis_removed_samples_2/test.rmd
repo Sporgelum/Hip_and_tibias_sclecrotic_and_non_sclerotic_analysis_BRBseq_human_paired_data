@@ -1,0 +1,79 @@
+---
+title: ""
+author: ""
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: hide
+    fig_caption: no
+    highlight: haddock
+    number_sections: no
+    theme: sandstone
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(Hmisc) #also loads ggplot2, lattice, survival, Formula
+library(tidyverse)
+library(knitr)    
+library(tabletools) #
+library(htmlTable)
+require(cowplot)
+
+# Default ggplot theme
+theme_set(theme_bw() +
+            theme(axis.title.x = element_text(size = rel(1.25)),
+                  axis.title.y = element_text(size = rel(1.25)),
+                  plot.caption = element_text(face = "italic", size = 9),
+                  legend.position = "bottom",
+                  legend.background = element_rect(fill = "transparent"), 
+                  panel.background = element_rect(fill = "transparent"),
+                  panel.border = element_blank(),
+                  axis.line = element_line(color="black"),
+                  panel.grid.major.x = element_blank(),
+                  panel.grid.minor.x = element_blank(),
+                  panel.grid.minor.y = element_blank(),
+                  panel.grid.major.y = element_line(color = "grey90", linetype = 2)
+          ))
+
+# hyperinsulinemic clamp
+breaks_hie <- seq(0, 240, by = 30)
+labels_hie <- breaks_hie
+  labels_hie[seq_along(labels_hie) %% 2 == 0] <- ""
+
+# knitr options
+# save all the figures that are generated into a folder labeled "figures"
+knitr::opts_chunk$set(
+	fig.path = "figures/",
+	message = FALSE,
+	warning = FALSE
+)
+options(prType="html")
+
+# Use the folowing with html output instead of notebook
+# knitrSet(lang='markdown', h=4.5)
+# knitrSet redirects all messages to messages.txt
+options(grType='plotly') # for certain graphics functions
+mu <- markupSpecs$html   # markupSpecs is in Hmisc
+cap  <- mu$cap           # function to output html caption
+lcap <- mu$lcap          # for continuation for long caption
+# These last 2 functions are used by the putHfig function in Hmisc
+```
+
+
+
+
+# Session Info
+
+<button class="btn btn-primary" data-toggle="collapse" data-target="#SessionInfo">
+
+Show/Hide
+
+</button>
+
+::: {#SessionInfo .collapse}
+```{r echo=T}
+Hmisc::markupSpecs$html$session()
+```
+:::

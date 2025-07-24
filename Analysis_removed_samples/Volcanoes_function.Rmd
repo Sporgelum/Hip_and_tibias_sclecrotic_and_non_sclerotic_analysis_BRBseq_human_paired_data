@@ -1,0 +1,242 @@
+---
+title: "Volcanos"
+output:
+  html_document:
+    df_print: paged
+---
+
+Before running this script, you need to run all the analysis first so the variable are available.
+
+# run volcanos for all the comparisons of interest
+```{r}
+
+```
+
+
+# Get comparisons 
+```{r}
+ls(all.names = TRUE)
+# Get all object names that match a pattern
+comparison_names <- ls(pattern = "vs")
+comparison_names
+```
+
+
+```{r}
+comparisons_list <- mget(comparison_names)
+comparisons_list
+
+```
+
+
+# volcano
+```{r}
+plot_volcano <- function(results_table, 
+                         gene_column = "genes", 
+                         logFC_column = "logFC", 
+                         FDR_column = "FDR", 
+                         genes_of_interest = NULL, 
+                         #output_file = paste0("volcano_plot.",format_plot),
+                         output_file = NULL,
+                         format_plot = "tiff",
+                         up_color = "#d00000", 
+                         down_color = "#3f88c5", 
+                         ns_color = "#f2e9e4", 
+                         up_size = 2, 
+                         down_size = 2, 
+                         ns_size = 1,
+                         up_alpha = 1, 
+                         down_alpha = 1, 
+                         ns_alpha = 0.5,
+                         x_limits = c(-10, 10),
+                         y_threshold = -log10(0.05),
+                         x_label = "Log2 Fold Change",
+                         y_label = "-Log10 Adjusted P-Value") {
+  
+  # Mutate the gene type
+  results_table <- results_table |>
+    dplyr::mutate(gene_type = dplyr::case_when(
+      !!rlang::sym(logFC_column) > 1 & !!rlang::sym(FDR_column) < 0.05 ~ "Upregulated",
+      !!rlang::sym(logFC_column) < -1 & !!rlang::sym(FDR_column) < 0.05 ~ "Downregulated",
+      TRUE ~ "Not selected"
+    )) |>
+    dplyr::filter(!!rlang::sym(gene_column) != "")
+  
+  # Get the top up and down genes
+  ints_up <- results_table |>
+    dplyr::filter(!!rlang::sym(FDR_column) < 0.05 & !!rlang::sym(logFC_column) > 1) |>
+    dplyr::arrange(!!rlang::sym(FDR_column)) |>
+    dplyr::slice(1:10) |>
+    dplyr::pull(!!rlang::sym(gene_column))
+  
+  ints_down <- results_table |>
+    dplyr::filter(!!rlang::sym(FDR_column) < 0.05 & !!rlang::sym(logFC_column) < -1) |>
+    dplyr::arrange(!!rlang::sym(FDR_column)) |>
+    dplyr::slice(1:10) |>
+    dplyr::pull(!!rlang::sym(gene_column))
+  
+  ints <- c(ints_up, ints_down)
+  
+  ints_genes <- results_table |>
+    dplyr::filter(!!rlang::sym(gene_column) %in% ints) |>
+    dplyr::distinct(!!rlang::sym(gene_column), .keep_all = TRUE)
+  
+  if (!is.null(genes_of_interest)) {
+    to_add_genes <- results_table |>
+      dplyr::filter(!!rlang::sym(gene_column) %in% genes_of_interest) |> 
+      dplyr::mutate(gene_type = dplyr::case_when(
+        !!rlang::sym(logFC_column) > 1 & !!rlang::sym(FDR_column) < 0.05 ~ "Upregulated",
+        !!rlang::sym(logFC_column) < -1 & !!rlang::sym(FDR_column) < 0.05 ~ "Downregulated",
+        TRUE ~ "Not Selected"))
+    results_table <- rbind(results_table, to_add_genes)
+    ints_genes <- rbind(ints_genes, to_add_genes)
+  }
+  
+  # Define the plot
+  p <- results_table |>
+    ggplot(aes(x = !!rlang::sym(logFC_column),
+               y = -log10(!!rlang::sym(FDR_column)))) +
+    geom_point(aes(colour = gene_type), 
+               alpha = 0.8, 
+               shape = 16,
+               size = 1) +
+    geom_hline(yintercept = y_threshold,
+               linetype = "dashed") + 
+    geom_vline(xintercept = c(log2(0.5), log2(2)),
+               linetype = "dashed") +
+    geom_point(data = dplyr::filter(ints_genes, gene_type == "up"),
+               shape = 21,
+               size = 2,
+               fill = "tomato3", 
+               colour = "black") + 
+    geom_point(data = dplyr::filter(ints_genes, gene_type == "down"),
+               shape = 21,
+               size = 2,
+               fill = "steelblue", 
+               colour = "black") +
+    geom_label_repel(data = ints_genes, # Add labels last to appear as the top layer  
+                     aes(label = !!rlang::sym(gene_column)),
+                     force = 2,
+                     nudge_y = .2, nudge_x = 0.1,
+                     max.overlaps = 30, size = 2) +
+    scale_color_manual(values = c("Upregulated" = up_color,
+                                  "Downregulated" = down_color,
+                                  "Not Selected" = ns_color)) +
+    scale_x_continuous(breaks = c(seq(-10, 10, 2)),     
+                       limits = x_limits) +
+    labs(x = x_label, y = y_label, color = "Genes") +#title = title
+
+    #theme_void() +  # Remove background
+    #theme(legend.position = "none")  # Remove legend if not needed
+    theme_classic(base_size = 14) +
+    theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+  
+  if (!is.null(genes_of_interest)) {
+    p <- p + geom_point(data = to_add_genes,
+                        shape = 21,
+                        size = 2.4,
+                        fill = "#70e000", 
+                        colour = "black")
+    }
+  # Save the plot
+  if (!is.null(output_file)) {
+    ggsave(plot = p,
+           filename = output_file,
+           device = format_plot,
+           dpi = 300,
+           units = "in",
+           width = 7, height = 12)
+  }
+  
+  return(p)
+}
+
+```
+
+
+## HERE IF WANNA SAVE THE PLOT CHANGE THE OUTPUT FILE
+
+```{r}
+#path_volc = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples/DGE_Results_tables/adipocytes_patient/"
+volcano_adipocyte_hip_and_tibia_sclerotic_vs_non.sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[1]]]$results$table,
+                                                                           #format_plot="tiff",
+                                                                           #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                                           gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_adipocyte_hip_and_tibia_sclerotic_vs_non.sclerotic
+
+```
+
+```{r}
+#pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
+comparison_names[8]
+#path_volc = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples/DGE_Results_tables/adipocytes_patient/"
+volcano_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[8]]]$results$table,
+                                                                           #format_plot="tiff",
+                                                                           #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                                           gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
+```
+
+# Hips
+```{r}
+comparison_names[5]
+#path_volc = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples/DGE_Results_tables/adipocytes_patient/"
+volcano_hip_adipocytes_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[5]]]$results$table,
+                                                                           #format_plot="tiff",
+                                                                           #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                                           gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_hip_adipocytes_sclerotic_vs_non_sclerotic
+```
+```{r}
+comparison_names[6]
+volcano_hip_pellet_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[6]]]$results$table,
+                                                              #format_plot="tiff",
+                                                              #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                              gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_hip_pellet_sclerotic_vs_non_sclerotic
+```
+
+
+```{r}
+comparison_names[7]
+volcano_hip_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[7]]]$results$table,
+                                                              #format_plot="tiff",
+                                                              #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                              gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_hip_sclerotic_vs_non_sclerotic
+```
+# Tibias
+```{r}
+comparison_names[9]
+volcano_tibia_adipocytes_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[9]]]$results$table,
+                                                              #format_plot="tiff",
+                                                              #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                              gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_adipocytes_sclerotic_vs_non_sclerotic
+```
+```{r}
+comparison_names[10]
+volcano_tibia_pellet_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[10]]]$results$table,
+                                                              #format_plot="tiff",
+                                                              #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                              gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_pellet_sclerotic_vs_non_sclerotic
+```
+```{r}
+comparison_names[11]
+volcano_tibia_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = comparisons_list[[comparison_names[11]]]$results$table,
+                                                              #format_plot="tiff",
+                                                              #output_file = paste0(path_volc,"volcano_",comparison_names[1],".tiff"),
+                                                              gene_column = "genes",genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_sclerotic_vs_non_sclerotic
+```
+
+```{r}
+comparison_names
+```
+
