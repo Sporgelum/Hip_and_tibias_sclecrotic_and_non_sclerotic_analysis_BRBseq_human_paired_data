@@ -1467,7 +1467,7 @@ df <- data.frame("Sample" = names(col_sums), "Sum" = col_sums)
 
 # Merge with metadata to get group information
 df <- df %>%
-  left_join(md_df_bone, by = c("Sample" = "sampleID"))
+  dplyr::left_join(md_df_bone, by = c("Sample" = "sampleID"))
 
 
 # Calculate percentiles
@@ -3462,8 +3462,8 @@ pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibi
 raw_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>%
   select(starts_with("X"), genes) %>%
   # left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$colsums_samples, by = "genes") %>%
-  left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") %>%
-  select(starts_with("X")) %>%
+  dplyr::left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") |> 
+  dplyr::select(starts_with("X")) %>%
   as.matrix()
 
 rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
@@ -3475,9 +3475,9 @@ rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap
 norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix)
 norm_counts_df$genes <- rownames(norm_counts_df)
 norm_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>%
-  select(starts_with("X"), genes) %>%
-  left_join(norm_counts_df, by = "genes") %>%
-  select(starts_with("X")) %>%
+  dplyr::select(starts_with("X"), genes) %>%
+  dplyr::left_join(norm_counts_df, by = "genes") %>%
+  dplyr::select(starts_with("X")) %>%
   as.matrix()
 
 rownames(norm_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
@@ -3578,11 +3578,11 @@ annotation_col <- annotation_col %>%
 annotation_col <- annotation_col %>% select(-ID, -tissue, -type)
 
 # Merge with metadata
-annotation_col <- annotation_col %>%
-  left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
+annotation_col <- annotation_col |> 
+  dplyr::left_join(md_df_bone  |>  filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
 
 # Select relevant columns
-annotation_col <- annotation_col %>% dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender)
+annotation_col <- annotation_col |> dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender)
 
 rownames(annotation_col) <- colnames(raw_counts)
 
@@ -3648,7 +3648,7 @@ annotation_col <- annotation_col %>% select(-ID, -tissue, -type)
 
 # Merge with metadata
 annotation_col <- annotation_col %>%
-  left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
+  dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
 
 # Select relevant columns
 annotation_col <- annotation_col %>% dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender)
@@ -3808,13 +3808,13 @@ annotation_col <- annotation_col |>
 # Add BMI,Age to samples
 annotation_col <- annotation_col |> 
   # left_join(md_df[md_df$tissue_celltype_lowercase == "pellet",] [,c("sampleID","Plate.ID","nanodrop","a260.230","RIN...24","Age","Gender","BMI","Row.y","Column.y","sample_number")],by =c("sample_2"="sampleID"))
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")],by = c("sample_2"="sampleID"))
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")],by = c("sample_2"="sampleID"))
 
 annotation_col <- annotation_col %>% select(-ID, -tissue, -type, -sample_2,)
 
 # # Merge with metadata
 # annotation_col <- annotation_col %>%
-#   left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
+#   dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
 # 
 # # Select relevant columns
 # annotation_col <- annotation_col %>% dplyr::select(condition, Gender, oarsi,BMI )#Plate.ID_tissue, Age, Gender)barcodePlate.ID, X260.230.value..Nanodrop.,Concentration..ng.µL
@@ -3910,7 +3910,7 @@ cat("\nClinical feature rankings:\n")
 print(clinical_ranks)
 ```
 
-# RF model with OARSI samples.
+# RF model with OARSI samples. (OLD) go at the end
 
 ```{r}
 ####################################################################################################
@@ -3941,13 +3941,13 @@ non_sclerotic_scores <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/202
 ```{r}
 # Extract the row where 'oabs scoring' is 'OARSI scoring'
 non_sclerotic_scores_vec <- non_sclerotic_scores  |>
-  filter(`oabs scoring` == "OARSI scoring") |> 
-  select(where(is.numeric)) |> 
+  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
+  dplyr::select(where(is.numeric)) |> 
   unlist(use.names = FALSE)
 
 sclerotic_scores_vec <- sclerotic_scores  |>
-  filter(`oabs scoring` == "OARSI scoring") |> 
-  select(where(is.numeric)) |> 
+  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
+  dplyr::select(where(is.numeric)) |> 
   unlist(use.names = FALSE)
 
 names(non_sclerotic_scores)
@@ -3965,22 +3965,22 @@ annotation_col <- annotation_col |>
 # Add BMI,Age to samples
 
 annotation_col_sc <- annotation_col |> 
-  filter(condition=="sclerotic") |> 
-  left_join(md_df |> 
-              filter(health_status == "sclerotic",
+  dplyr::filter(condition=="sclerotic") |> 
+  dplyr::left_join(md_df |> 
+              dplyr::filter(health_status == "sclerotic",
                      tissue_celltype_lowercase == "pellet") |> 
-              select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),
+              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),
             by = c("sample_2"="sampleID"))
 
 annotation_col_sc
 annotation_col_sc <- annotation_col_sc |>
-  left_join(oarsi_data_scores |> 
-              select(-non_sclerotic_samples),
+  dplyr::left_join(oarsi_data_scores |> 
+              dplyr::select(-non_sclerotic_samples),
             by=c("ID"="sampleID"))
 annotation_col_sc
 # Select only samples containing oarsi scores
 annotation_col_sc <- annotation_col_sc |> 
-  filter(!is.na(sclerotic_samples))
+  dplyr::filter(!is.na(sclerotic_samples))
 annotation_col_sc
 
 
@@ -3989,27 +3989,27 @@ annotation_col_sc
 
 
 annotation_col_nsc <- annotation_col |> 
-  filter(condition == "non.sclerotic") |> 
-  left_join(md_df |> 
-              filter(health_status == "non.sclerotic",
+  dplyr::filter(condition == "non.sclerotic") |> 
+  dplyr::left_join(md_df |> 
+              dplyr::filter(health_status == "non.sclerotic",
                      tissue_celltype_lowercase == "pellet") |> 
-              select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate..
+              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate..
             by = c("sample_2"="sampleID"))
 annotation_col_nsc
 
 annotation_col_nsc <- annotation_col_nsc |>
-  left_join(oarsi_data_scores |> 
-              select(-sclerotic_samples),
+  dplyr::left_join(oarsi_data_scores |> 
+              dplyr::select(-sclerotic_samples),
             by=c("ID"="sampleID"))
 annotation_col_nsc
 # Select only samples containing oarsi scores
 annotation_col_nsc <- annotation_col_nsc |> 
-  filter(!is.na(non_sclerotic_samples))
+  dplyr::filter(!is.na(non_sclerotic_samples))
 
 
 
 
-annotation_col_oarsi_samples <- bind_rows(annotation_col_sc,annotation_col_nsc)
+annotation_col_oarsi_samples <- dplyr::bind_rows(annotation_col_sc,annotation_col_nsc)
 annotation_col_oarsi_samples
 ```
 
@@ -4017,8 +4017,8 @@ annotation_col_oarsi_samples
 
 #df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b)
 annotation_col_oarsi_samples <- annotation_col_oarsi_samples |> 
-  mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
-  select(-sclerotic_samples,-non_sclerotic_samples)
+  dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
+  dplyr::select(-sclerotic_samples,-non_sclerotic_samples)
   
 
 norm_counts_oarsi <-  norm_counts[,annotation_col_oarsi_samples$sample_2]
@@ -4148,6 +4148,9 @@ ggplot(top_features, aes(x = reorder(Feature, Importance), y = Importance)) +
 
 ```
 
+# RF
+# RF on comparisons of interest
+# RF 
 # Hip adipocyte sclerotic vs non sclerotic RF.
 ```{r,fig.height=5, fig.width=6}
 library(randomForest)
@@ -4180,7 +4183,9 @@ hip_adipocytes_sclerotic_vs_non_sclerotic_heatmap <- hip_adipocytes_sclerotic_vs
   slice_head(n = 500) # Top 500 DEG genes
 
 # Get most variable genes (top 1k)
-gene_vars <- apply(hip_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+#gene_vars <- apply(hip_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+gene_vars <- apply(hip_adipocytes_sclerotic_vs_non_sclerotic$logcpm, 1, var, na.rm = TRUE)
+
 top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])
 
 # Combine approaches - union of variable and significant genes
@@ -4191,7 +4196,8 @@ cat("Top variable genes:", length(top_var_genes), "\n")
 cat("Top DEG genes:", length(hip_adipocytes_sclerotic_vs_non_sclerotic_heatmap$genes), "\n")
 
 # Prepare normalized counts matrix
-norm_counts <- hip_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+#norm_counts <- hip_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+norm_counts <- hip_adipocytes_sclerotic_vs_non_sclerotic$logcpm[selected_genes,]
 norm_counts <- na.omit(norm_counts)
 
 cat("Matrix dimensions after filtering:", dim(norm_counts), "\n")
@@ -4212,8 +4218,8 @@ annotation_col <- annotation_col |>
 
 # Add metadata (BMI, Age, Gender)
 annotation_col <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 # Combine data
 combined_data <- cbind(t(norm_counts), annotation_col)
@@ -4532,8 +4538,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 
@@ -4724,7 +4730,9 @@ hip_pellet_sclerotic_vs_non_sclerotic_heatmap <- hip_pellet_sclerotic_vs_non_scl
   slice_head(n = 500) # Top 500 DEG genes
 
 # Get most variable genes (top 1k)
-gene_vars <- apply(hip_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+#gene_vars <- apply(hip_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+gene_vars <- apply(hip_pellet_sclerotic_vs_non_sclerotic$logcpm, 1, var, na.rm = TRUE)
+
 top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])
 
 # Combine approaches - union of variable and significant genes
@@ -4735,7 +4743,8 @@ cat("Top variable genes:", length(top_var_genes), "\n")
 cat("Top DEG genes:", length(hip_pellet_sclerotic_vs_non_sclerotic_heatmap$genes), "\n")
 
 # Prepare normalized counts matrix
-norm_counts <- hip_pellet_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+#norm_counts <- hip_pellet_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+norm_counts <- hip_pellet_sclerotic_vs_non_sclerotic$logcpm[selected_genes,]
 norm_counts <- na.omit(norm_counts)
 
 cat("Matrix dimensions after filtering:", dim(norm_counts), "\n")
@@ -4756,8 +4765,8 @@ annotation_col <- annotation_col |>
 
 # Add metadata (BMI, Age, Gender)
 annotation_col <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 # Combine data
 combined_data <- cbind(t(norm_counts), annotation_col)
@@ -5043,8 +5052,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 
@@ -5236,7 +5245,8 @@ tibia_adipocytes_sclerotic_vs_non_sclerotic_heatmap <- tibia_adipocytes_scleroti
   slice_head(n = 500) # Top 500 DEG genes
 
 # Get most variable genes (top 1k)
-gene_vars <- apply(tibia_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+#gene_vars <- apply(tibia_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+gene_vars <- apply(tibia_adipocytes_sclerotic_vs_non_sclerotic$logcpm, 1, var, na.rm = TRUE)
 top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])
 
 # Combine approaches - union of variable and significant genes
@@ -5247,7 +5257,8 @@ cat("Top variable genes:", length(top_var_genes), "\n")
 cat("Top DEG genes:", length(tibia_adipocytes_sclerotic_vs_non_sclerotic_heatmap$genes), "\n")
 
 # Prepare normalized counts matrix
-norm_counts <- tibia_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+#norm_counts <- tibia_adipocytes_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+norm_counts <- tibia_adipocytes_sclerotic_vs_non_sclerotic$logcpm[selected_genes,]
 norm_counts <- na.omit(norm_counts)
 
 cat("Matrix dimensions after filtering:", dim(norm_counts), "\n")
@@ -5268,8 +5279,8 @@ annotation_col <- annotation_col |>
 
 # Add metadata (BMI, Age, Gender)
 annotation_col <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 # Combine data
 combined_data <- cbind(t(norm_counts), annotation_col)
@@ -5555,8 +5566,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 
@@ -5748,7 +5759,8 @@ tibia_pellet_sclerotic_vs_non_sclerotic_heatmap <- tibia_pellet_sclerotic_vs_non
   slice_head(n = 500) # Top 500 DEG genes
 
 # Get most variable genes (top 1k)
-gene_vars <- apply(tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+#gene_vars <- apply(tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+gene_vars <- apply(tibia_pellet_sclerotic_vs_non_sclerotic$logcpm, 1, var, na.rm = TRUE)
 top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])
 
 # Combine approaches - union of variable and significant genes
@@ -5759,7 +5771,8 @@ cat("Top variable genes:", length(top_var_genes), "\n")
 cat("Top DEG genes:", length(tibia_pellet_sclerotic_vs_non_sclerotic_heatmap$genes), "\n")
 
 # Prepare normalized counts matrix
-norm_counts <- tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+#norm_counts <- tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
+norm_counts <- tibia_pellet_sclerotic_vs_non_sclerotic$logcpm[selected_genes,]
 norm_counts <- na.omit(norm_counts)
 
 cat("Matrix dimensions after filtering:", dim(norm_counts), "\n")
@@ -5780,8 +5793,8 @@ annotation_col <- annotation_col |>
 
 # Add metadata (BMI, Age, Gender)
 annotation_col <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 # Combine data
 combined_data <- cbind(t(norm_counts), annotation_col)
@@ -6067,8 +6080,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
-  select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 
@@ -6230,7 +6243,224 @@ cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 
 
 
-# TODO correlate if other ML models agree, add OARSI model and predict sclerotic and non-sclerotic, and get predictive genes, end!
+# OARSI model and predict sclerotic and non-sclerotic, and get predictive genes!
+```{r}
+####################################################################################################
+# # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     #
+####################################################################################################
+## Load metadata of image scoring
+
+.libPaths("/home/mbotos/CLUSTER/RLibs/")
+library(readxl)
+sclerotic_scores_tibia <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "SC")
+non_sclerotic_scores_tibia <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "NS ")
+sclerotic_scores_hip <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx",sheet = "SC")
+non_sclerotic_scores_hip <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx",sheet = "NS ")
+#Oarsi scoring
+# 0 Normal
+# 1 Small
+# 2 Supeficial
+# 3 25% arthrosis damage to the joint
+# 4 50 %
+# 5 75 %
+# 6 >75%
+# convert all to categorical values.
+non_sclerotic_scores_tibia
+non_sclerotic_scores_hip
+non_sclerotic_scores <- merge(x = non_sclerotic_scores_tibia, y = non_sclerotic_scores_hip, by.x= 'oabs scoring', by.y='oabs scoring') 
+non_sclerotic_scores
+
+sclerotic_scores_tibia
+sclerotic_scores_hip
+sclerotic_scores <- merge(x=sclerotic_scores_tibia, y=sclerotic_scores_hip, by.x='oabs scoring', by.y='oabs scoring')
+sclerotic_scores
+
+
+```
+# Use the features of inflammation, cysts... and so on not only the final oarsi score. oabs --> predictive score..
+```{r}
+
+```
+
+
+# Extract and add the scores to the samples that have it.
+```{r}
+# Extract the row where 'oabs scoring' is 'OARSI scoring'
+non_sclerotic_scores_vec <- non_sclerotic_scores  |>
+  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
+  dplyr::select(where(is.numeric)) |> 
+  unlist(use.names = FALSE)
+
+sclerotic_scores_vec <- sclerotic_scores  |>
+  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
+  dplyr::select(where(is.numeric)) |> 
+  unlist(use.names = FALSE)
+
+names(non_sclerotic_scores)
+oarsi_data_scores <- data.frame(sampleID=paste0("X",names(non_sclerotic_scores)[2:length(names(non_sclerotic_scores))]),
+                                sclerotic_samples=sclerotic_scores_vec,
+                                non_sclerotic_samples=non_sclerotic_scores_vec)
+oarsi_data_scores
+```
+
+# Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
+```{r}
+# Prepare annotation data, select the top 2000 HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
+# run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
+
+results$logcpm
+
+
+
+# Get most variable genes (top 2k)
+#gene_vars <- apply(tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
+gene_vars <- apply(results$logcpm, 1, var, na.rm = TRUE)
+top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:2000])
+
+norm_counts <- results$logcpm[top_var_genes,]
+norm_counts <- na.omit(norm_counts)
+
+
+
+
+
+
+
+annotation_col <- as.data.frame(colnames(norm_counts))
+colnames(annotation_col) <- "sample"
+annotation_col$sample_2 <- annotation_col$sample
+
+# Split the sample names into components
+annotation_col <- annotation_col |> 
+  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
+# Add BMI,Age to samples
+
+annotation_col_sc <- annotation_col |> 
+  dplyr::filter(condition=="sclerotic") |> 
+  dplyr::left_join(md_df |> 
+              dplyr::filter(health_status == "sclerotic",
+                     tissue_celltype_lowercase == "pellet") |> 
+              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),
+            by = c("sample_2"="sampleID"))
+
+annotation_col_sc
+annotation_col_sc <- annotation_col_sc |>
+  dplyr::left_join(oarsi_data_scores |> 
+              dplyr::select(-non_sclerotic_samples),
+            by=c("ID"="sampleID"))
+annotation_col_sc
+# Select only samples containing oarsi scores
+annotation_col_sc <- annotation_col_sc |> 
+  dplyr::filter(!is.na(sclerotic_samples))
+annotation_col_sc
+
+
+
+
+
+
+annotation_col_nsc <- annotation_col |> 
+  dplyr::filter(condition == "non.sclerotic") |> 
+  dplyr::left_join(md_df |> 
+              dplyr::filter(health_status == "non.sclerotic",
+                     tissue_celltype_lowercase == "pellet") |> 
+              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate..
+            by = c("sample_2"="sampleID"))
+annotation_col_nsc
+
+annotation_col_nsc <- annotation_col_nsc |>
+  dplyr::left_join(oarsi_data_scores |> 
+              dplyr::select(-sclerotic_samples),
+            by=c("ID"="sampleID"))
+annotation_col_nsc
+# Select only samples containing oarsi scores
+annotation_col_nsc <- annotation_col_nsc |> 
+  dplyr::filter(!is.na(non_sclerotic_samples))
+
+
+
+
+annotation_col_oarsi_samples <- dplyr::bind_rows(annotation_col_sc,annotation_col_nsc)
+annotation_col_oarsi_samples
+```
+
+# RF model with info OARSI samples.
+```{r,fig.height=4,fig.width=6}
+
+#df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b)
+annotation_col_oarsi_samples <- annotation_col_oarsi_samples |> 
+  dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
+  dplyr::select(-sclerotic_samples,-non_sclerotic_samples)
+  
+
+norm_counts_oarsi <-  norm_counts[,annotation_col_oarsi_samples$sample_2]
+combined_data <- cbind(t(norm_counts_oarsi), annotation_col_oarsi_samples)
+# NO -- NA -- VALUES NOT ALLOWED
+
+
+# Alternatively, you can remove rows with missing values
+# chec if any na..
+any(is.na(combined_data))
+sum(is.na(combined_data))
+combined_data <- na.omit(combined_data)
+dim(combined_data)
+#column_to_remove <- "MAMDC2-AS1"
+# combined_data <- combined_data %>% select(-all_of(column_to_remove))
+# Replace all hyphens with dots in column names
+colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
+# combined_data <- combined_data %>% select(-matches("AS1$"))
+# combined_data <- combined_data %>% select(-matches("AS2$"))
+# combined_data <- combined_data %>% select(-matches("IT1$"))
+# combined_data <- combined_data %>% select(-matches("EGLN2$"))
+# combined_data <- combined_data %>% select(-matches("-3$"))
+combined_data <- combined_data |>  select(-type,-sample_2,-tissue)
+dim(combined_data)
+
+
+
+# ### Solve the issue with too many columns.... of the genes....
+# combined_data <- combined_data[,c(1:5000,ncol(combined_data),(ncol(combined_data)-1),(ncol(combined_data)-2),(ncol(combined_data)-3))]
+
+
+# Ensure the condition column is a factor
+combined_data$condition <- as.factor(combined_data$condition)
+combined_data$oarsi_score <- as.factor(combined_data$oarsi_score)
+combined_data$Age <- as.factor(combined_data$Age)
+combined_data$Gender <- as.factor(combined_data$Gender)
+combined_data$BMI <- as.factor(combined_data$BMI)
+#combined_data$Column.y <- as.factor(combined_data$Column.y)
+#combined_data$Row.y <- as.factor(combined_data$Row.y)
+colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
+
+#combined_data$oarsi <- as.factor(combined_data$oarsi)
+# Split the data into training and testing sets
+set.seed(123) # For reproducibility
+trainIndex <- caret::createDataPartition(combined_data$condition, p = .7, 
+                                  list = FALSE, 
+                                  times = 1)
+train_data <- combined_data[trainIndex, ]
+test_data <- combined_data[-trainIndex, ]
+# Train rf model, excluding oarsi scores and see how does it affect.
+# rf_model_oarsi <- randomForest::randomForest(condition ~ . - oarsi, data = train_data, importance = TRUE)
+# Keep oarsi
+rf_model_oarsi <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000)
+# Predict on the test data
+predictions <- predict(rf_model_oarsi, test_data)
+
+# Evaluate the model
+caret::confusionMatrix(predictions, test_data$condition)
+
+# Feature importance
+randomForest::importance(rf_model_oarsi)
+randomForest::varImpPlot(rf_model_oarsi)
+
+# Get importance scores
+importance_scores <- importance(rf_model_oarsi)
+head(importance_scores[order(importance_scores[,3], decreasing = TRUE), ])
+
+print(rf_model)
+```
+
 
 # Train model
 ```{r}

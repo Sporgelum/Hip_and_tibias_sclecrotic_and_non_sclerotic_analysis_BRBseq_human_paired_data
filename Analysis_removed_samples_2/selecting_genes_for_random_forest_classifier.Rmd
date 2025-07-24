@@ -1,0 +1,346 @@
+---
+title: "Select genes for Random Forest classifier"
+output: html_notebook
+---
+
+```{r}
+# ================================================================
+# VARIANCE-BASED GENE SELECTION METHODS: DETAILED COMPARISON
+# ================================================================
+
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(RColorBrewer)
+```
+
+
+```{r}
+# ================================================================
+# SIMULATE EXAMPLE DATA TO ILLUSTRATE CONCEPTS
+# ================================================================
+
+simulate_example_genes <- function(n_samples = 40, n_sclerotic = 20) {
+  
+  set.seed(123)
+  
+  # Create sample groups
+  condition <- c(rep("sclerotic", n_sclerotic), rep("non_sclerotic", n_samples - n_sclerotic))
+  
+  # Simulate 5 different types of genes
+  
+  # Gene A: High overall variance, but NO difference between groups
+  # (High noise, no signal - BAD for classification)
+  gene_A <- c(
+    rnorm(n_sclerotic, mean = 10, sd = 3),    # sclerotic: mean=10, high variance
+    rnorm(n_samples - n_sclerotic, mean = 10, sd = 3)  # non_sclerotic: mean=10, high variance
+  )
+  
+  # Gene B: Low overall variance, but CLEAR difference between groups
+  # (Low noise, strong signal - EXCELLENT for classification)
+  gene_B <- c(
+    rnorm(n_sclerotic, mean = 8, sd = 0.5),    # sclerotic: mean=8, low variance
+    rnorm(n_samples - n_sclerotic, mean = 12, sd = 0.5) # non_sclerotic: mean=12, low variance
+  )
+  
+  # Gene C: High overall variance, HIGH difference between groups
+  # (High noise, strong signal - GOOD for classification)
+  gene_C <- c(
+    rnorm(n_sclerotic, mean = 5, sd = 2),      # sclerotic: mean=5
+    rnorm(n_samples - n_sclerotic, mean = 15, sd = 2)   # non_sclerotic: mean=15
+  )
+  
+  # Gene D: Medium overall variance, MEDIUM difference between groups
+  # (Medium noise, medium signal - OK for classification)
+  gene_D <- c(
+    rnorm(n_sclerotic, mean = 10, sd = 1.5),   # sclerotic: mean=10
+    rnorm(n_samples - n_sclerotic, mean = 13, sd = 1.5) # non_sclerotic: mean=13
+  )
+  
+  # Gene E: Very consistent expression (housekeeping-like)
+  # (Very low noise, no signal - BAD for classification)
+  gene_E <- c(
+    rnorm(n_sclerotic, mean = 7, sd = 0.2),    # sclerotic: mean=7, very low variance
+    rnorm(n_samples - n_sclerotic, mean = 7.1, sd = 0.2) # non_sclerotic: mean=7.1, very low variance
+  )
+  
+  # Combine into data frame
+  gene_data <- data.frame(
+    sample = paste0("Sample_", 1:n_samples),
+    condition = condition,
+    Gene_A = gene_A,
+    Gene_B = gene_B,
+    Gene_C = gene_C,
+    Gene_D = gene_D,
+    Gene_E = gene_E
+  )
+  
+  return(gene_data)
+}
+
+# ================================================================
+# CALCULATE DIFFERENT VARIANCE METRICS
+# ================================================================
+
+calculate_variance_metrics <- function(gene_data) {
+  
+  genes <- c("Gene_A", "Gene_B", "Gene_C", "Gene_D", "Gene_E")
+  metrics <- data.frame(
+    Gene = genes,
+    Overall_Variance = numeric(length(genes)),
+    F_Statistic = numeric(length(genes)),
+    Coefficient_Variation = numeric(length(genes)),
+    Between_Group_Effect = numeric(length(genes)),
+    Within_Group_Variance = numeric(length(genes))
+  )
+  
+  for (i in seq_along(genes)) {
+    gene <- genes[i]
+    values <- gene_data[[gene]]
+    condition <- gene_data$condition
+    
+    # 1. OVERALL VARIANCE METHOD
+    metrics$Overall_Variance[i] <- var(values)
+    
+    # 2. F-STATISTIC METHOD (ANOVA F-value)
+    # Measures: Between-group variance / Within-group variance
+    aov_result <- aov(values ~ condition)
+    f_stat <- summary(aov_result)[[1]][1, "F value"]
+    metrics$F_Statistic[i] <- ifelse(is.na(f_stat), 0, f_stat)
+    
+    # 3. COEFFICIENT OF VARIATION METHOD
+    # Measures: Standard deviation / Mean (relative variability)
+    gene_mean <- mean(values)
+    gene_sd <- sd(values)
+    metrics$Coefficient_Variation[i] <- ifelse(gene_mean != 0, gene_sd / abs(gene_mean), 0)
+    
+    # 4. BETWEEN-GROUP vs WITHIN-GROUP ANALYSIS
+    sclerotic_vals <- values[condition == "sclerotic"]
+    non_sclerotic_vals <- values[condition == "non_sclerotic"]
+    
+    # Between-group effect (difference in means)
+    between_effect <- abs(mean(sclerotic_vals) - mean(non_sclerotic_vals))
+    metrics$Between_Group_Effect[i] <- between_effect
+    
+    # Within-group variance (average of group variances)
+    within_variance <- (var(sclerotic_vals) + var(non_sclerotic_vals)) / 2
+    metrics$Within_Group_Variance[i] <- within_variance
+    
+  }
+  
+  return(metrics)
+}
+
+# ================================================================
+# VISUALIZE THE CONCEPTS
+# ================================================================
+
+visualize_gene_patterns <- function(gene_data) {
+  
+  # Reshape data for plotting
+  library(tidyr)
+  plot_data <- gene_data %>%
+    pivot_longer(cols = starts_with("Gene_"), names_to = "Gene", values_to = "Expression")
+  
+  # Create individual plots for each gene
+  plot_list <- list()
+  
+  genes <- unique(plot_data$Gene)
+  for (i in seq_along(genes)) {
+    gene <- genes[i]
+    gene_subset <- plot_data[plot_data$Gene == gene, ]
+    
+    p <- ggplot(gene_subset, aes(x = condition, y = Expression, fill = condition)) +
+      geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+      geom_jitter(width = 0.2, alpha = 0.6, size = 2) +
+      scale_fill_brewer(palette = "Set2") +
+      labs(title = gene, x = "Condition", y = "Expression") +
+      theme_minimal() +
+      theme(legend.position = "none", 
+            plot.title = element_text(hjust = 0.5, size = 12, face = "bold"))
+    
+    plot_list[[i]] <- p
+  }
+  
+  # Arrange plots
+  do.call(grid.arrange, c(plot_list, ncol = 3, nrow = 2))
+  
+  return(plot_list)
+}
+
+# ================================================================
+# CREATE COMPARISON TABLE WITH RANKINGS
+# ================================================================
+
+create_method_comparison <- function(metrics) {
+  
+  # Rank genes by each method (1 = best for classification)
+  comparison <- data.frame(
+    Gene = metrics$Gene,
+    
+    # Overall Variance: Higher = better (but can be misleading!)
+    Overall_Var_Rank = rank(-metrics$Overall_Variance),
+    Overall_Var_Value = round(metrics$Overall_Variance, 2),
+    
+    # F-Statistic: Higher = better (best for classification!)
+    F_Stat_Rank = rank(-metrics$F_Statistic),
+    F_Stat_Value = round(metrics$F_Statistic, 2),
+    
+    # Coefficient of Variation: Higher = better (relative variability)
+    CV_Rank = rank(-metrics$Coefficient_Variation),
+    CV_Value = round(metrics$Coefficient_Variation, 3),
+    
+    # Between-group effect: Higher = better
+    Between_Effect_Rank = rank(-metrics$Between_Group_Effect),
+    Between_Effect_Value = round(metrics$Between_Group_Effect, 2)
+  )
+  
+  return(comparison)
+}
+
+# ================================================================
+# EXPLAIN EACH METHOD WITH EXAMPLES
+# ================================================================
+
+explain_methods_with_examples <- function() {
+  
+  cat("=== GENE SELECTION METHODS EXPLAINED ===\n\n")
+  
+  # Generate example data
+  gene_data <- simulate_example_genes()
+  
+  cat("SIMULATED GENE EXAMPLES:\n")
+  cat("- Gene A: High noise, NO signal (high variance, no group difference)\n")
+  cat("- Gene B: Low noise, STRONG signal (low variance, clear group difference)\n") 
+  cat("- Gene C: High noise, STRONG signal (high variance, clear group difference)\n")
+  cat("- Gene D: Medium noise, MEDIUM signal (medium variance, medium group difference)\n")
+  cat("- Gene E: Very low noise, NO signal (housekeeping gene)\n\n")
+  
+  # Calculate metrics
+  metrics <- calculate_variance_metrics(gene_data)
+  comparison <- create_method_comparison(metrics)
+  
+  # Visualize
+  cat("VISUALIZING GENE EXPRESSION PATTERNS:\n")
+  visualize_gene_patterns(gene_data)
+  
+  cat("\nCOMPARISON TABLE:\n")
+  print(comparison)
+  
+  cat("\nMETHOD EXPLANATIONS:\n\n")
+  
+  cat("OVERALL VARIANCE METHOD:\n")
+  cat("What it does: Selects genes with highest total variance\n")
+  cat("Problem: Gene A ranks high but is USELESS for classification!\n")
+  cat("Best for: Exploratory analysis, but poor for classification\n")
+  cat("Example: Picks noisy genes that don't discriminate groups\n\n")
+  
+  cat("F-STATISTIC METHOD (within_between):\n")
+  cat("What it does: Maximizes between-group / within-group variance ratio\n")
+  cat("Formula: F = (variance between groups) / (variance within groups)\n")
+  cat("Advantage: Gene B ranks #1 - perfect for classification!\n")
+  cat("Best for: Classification tasks (what you want!)\n")
+  cat("Example: Finds genes with clear group differences and low noise\n\n")
+  
+  cat("️COEFFICIENT OF VARIATION METHOD:\n")
+  cat("What it does: Standard deviation / Mean (relative variability)\n")
+  cat("Formula: CV = σ / μ\n")
+  cat("Advantage: Accounts for expression level (normalizes variance)\n")
+  cat("Best for: Comparing genes with very different expression levels\n")
+  cat("Example: High-expressing genes don't dominate selection\n\n")
+  
+  cat("RANKING SUMMARY FOR CLASSIFICATION:\n")
+  cat("1st: F-Statistic (best signal-to-noise ratio)\n")
+  cat("2nd: Coefficient of Variation (normalized variability)\n") 
+  cat("3rd: Overall Variance (can select noisy, uninformative genes)\n\n")
+  
+  return(list(
+    gene_data = gene_data,
+    metrics = metrics,
+    comparison = comparison
+  ))
+}
+
+# ================================================================
+# PRACTICAL ADVANTAGES SUMMARY
+# ================================================================
+
+summarize_practical_advantages <- function() {
+  
+  cat("=== PRACTICAL ADVANTAGES FOR YOUR RNA-SEQ PROJECT ===\n\n")
+  
+  advantages <- data.frame(
+    Method = c("Overall Variance", "F-Statistic", "Coefficient of Variation"),
+    
+    Best_For = c(
+      "Exploratory analysis, finding highly variable genes",
+      "Classification tasks, discriminating groups", 
+      "Comparing genes across different expression ranges"
+    ),
+    
+    Advantages = c(
+      "Simple, fast computation; captures overall gene variability",
+      "Optimal for classification; finds genes with best signal-to-noise ratio",
+      "Expression-level normalized; handles low/high expressing genes fairly"
+    ),
+    
+    Disadvantages = c(
+      "Can select noisy, non-discriminative genes; poor for classification",
+      "Requires group information; more complex computation",
+      "May miss some important highly-expressed discriminative genes"
+    ),
+    
+    Recommendation = c(
+      "Use for initial exploration only",
+      "BEST CHOICE for sclerotic vs non-sclerotic classification",
+      "Good alternative when gene expression ranges vary widely"
+    )
+  )
+  
+  print(advantages)
+  
+  cat("\nRECOMMENDATION FOR YOUR PROJECT:\n")
+  cat("Use F-STATISTIC method because:\n")
+  cat("Finds genes that best separate sclerotic vs non-sclerotic\n")
+  cat("Minimizes within-group noise\n") 
+  cat("Maximizes between-group signal\n")
+  cat("Leads to better Random Forest performance\n")
+  cat("More robust predictions on new samples\n\n")
+  
+  cat("IMPLEMENTATION TIP:\n")
+  cat("For your multi-comparison analysis, use:\n")
+  cat("select_genes_variance_based(method = 'within_between')\n")
+  cat("This will give you the most discriminative genes!\n")
+}
+
+# ================================================================
+# RUN COMPLETE EXAMPLE
+# ================================================================
+
+# Run the complete analysis
+cat("RUNNING COMPLETE EXAMPLE...\n\n")
+results <- explain_methods_with_examples()
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+summarize_practical_advantages()
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

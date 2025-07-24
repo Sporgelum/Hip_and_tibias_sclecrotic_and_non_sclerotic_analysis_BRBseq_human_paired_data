@@ -11,4 +11,19 @@
 *.gz
 brbseq-nf-pipeline/results/AMP0211/bigwigs/*
 brbseq-nf-pipeline/results/AMP0211/count_matrix/*
+*.png
+*.pdf
+*.jpg
+*.jpeg
+*.svg
+*.tif
+*.tiff
+*.log
+*.out
+*.err
+*.Rproj.user
+*.DS_Store
+*.Rproj
+*.Ruserdata
+*.Rproj.user/
 
