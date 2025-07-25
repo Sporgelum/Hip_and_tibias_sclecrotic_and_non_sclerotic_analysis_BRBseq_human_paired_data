@@ -6304,30 +6304,109 @@ oarsi_data_scores
 ```
 
 # Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
-```{r}
-# Prepare annotation data, select the top 2000 HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
+```{r,fig.width=16,fig.height=55}
+# Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
 # run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
 
-results$logcpm
+
+logcpm_all <- results$logcpm
+dim(logcpm_all)
+
+# Select samples that have the scores only
+oarsi_data_scores
+oarsi_data_scores <- oarsi_data_scores[!is.na(oarsi_data_scores$sclerotic_samples),]
+oarsi_data_scores <- oarsi_data_scores[!is.na(oarsi_data_scores$non_sclerotic_samples),]
+dim(oarsi_data_scores)
+#md_df_bone$sampleID[match(md_df_bone$sample_number, oarsi_data_scores$sampleID)] # returns exact position of the samples in the vectors and NA if not there.
+samples_to_select <- md_df_bone$sampleID[md_df_bone$sample_number %in% oarsi_data_scores$sampleID]
+logcpm_all <- logcpm_all[,samples_to_select]
+dim(logcpm_all)
+
+# Remove genes with low variance across all samples
+var_filter <- apply(logcpm_all, 1, var) > 0.1
+logcpm_all_filtered <- logcpm_all[var_filter, ]
+dim(logcpm_all_filtered)
+
+#######################################
+# Convert to data frame for f-testing #
+#######################################
+df <- as.data.frame(t(logcpm_all_filtered))  # samples x genes
+df$group <- factor(md_df_bone$health_status[match(colnames(logcpm_all_filtered), md_df_bone$sampleID)])
+df$patient <- factor(md_df_bone$sample_number[match(colnames(logcpm_all_filtered), md_df_bone$sampleID)])
+
+df <- df[!is.na(df$group), ]
+if (length(unique(df$group)) < 2) return(NA)
+
+# # Calculate F-statistic (between/within variance ratio), Compute F-stat for each gene   --> takes very long time... as much as genes sadly...
+# f_stats <- apply(logcpm_all_filtered, 1, function(x) {
+#   summary(aov(x ~ group, data = df))[[1]][["F value"]][1]
+# })
+# 
+# f_stats
+# Can also not include the paired samples effect, use better limma!
 
 
 
-# Get most variable genes (top 2k)
-#gene_vars <- apply(tibia_pellet_sclerotic_vs_non_sclerotic$normalized_matrix, 1, var, na.rm = TRUE)
-gene_vars <- apply(results$logcpm, 1, var, na.rm = TRUE)
-top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:2000])
 
-norm_counts <- results$logcpm[top_var_genes,]
-norm_counts <- na.omit(norm_counts)
+# Implement limma approach, and get a model for both conditions and extract the gene-trend and ranking of genes which suffies for Random forest.
+design <- model.matrix(~ 0 + patient + group,data = df)
+#colnames(design) <- levels(df$group)# working if only one..
+colnames(design) 
+fit <- lmFit(logcpm_all_filtered, design)
+#contrast <- makeContrasts(ScleroticVsNon = sclerotic - non.sclerotic,levels = design) # this i can use if i have more levels that i would be interested scuh as B-C, B-D, but if i just do B - A (sclerotic(level B) - non.sclerotic(level A)) no need 
+#fit2 <- contrasts.fit(fit, contrast)
+res <- eBayes(fit)
+tt <- topTable(res, number = Inf)
+# For one contrast, use t‑stats; for multiple groups you can get overall F:
+f_stats_limma <- res$F
+# this would take 2 seconds... to run all the sample compared to above which would take approx 5min
+rownames(fit)
+topF <- topTable(res,
+                 number = 2000,
+                 sort.by = "F",
+                 adjust.method = "BH")  # you can choose your p‑value adjustment
+
+# Extract the gene names
+top_genes <- rownames(topF)
+
+# Subset your data
+selected_data_limma <- logcpm_all_filtered[top_genes, ]
 
 
 
+############################################
+# we use the top_genes from limma here !   #
+############################################
+message("using limma top genes, modeled using ~0+patient+group, to extract the top 2k genes for RF")
+# Desired number of top genes (Here is: 2k)
+top_n <- 2000
+#top_genes <- names(sort(f_stats, decreasing = TRUE))[1:top_n]
+#selected_data <- logcpm_all_filtered[top_genes, ]
+#selected_data <- na.omit(selected_data)
+selected_data_limma
 
+# quick visu sanity check to see selected genes separate.
+library(pheatmap)
+annotation_col <-  df |> dplyr::select(group)
+#pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,# old f statistic pheatmap
+pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
 
+                   scale = "column",
+                   fontsize = 10,              # Adjust font size for readability
+                   fontsize_row = 8,           # Smaller row labels if needed
+                   fontsize_col = 10,          # Column labels
+                   #cellwidth = 2,             # Adjust cell width
+                   #cellheight = 0.3             # Adjust cell height
+)
+```
 
+# Build RF model with selected genes and OARSI features
+```{r}
 
-annotation_col <- as.data.frame(colnames(norm_counts))
+annotation_col <- as.data.frame(colnames(selected_data))
 colnames(annotation_col) <- "sample"
+#annotation_col$group <- factor(md_df_bone$health_status[match(colnames(logcpm_all_filtered), md_df_bone$sampleID)])
+
 annotation_col$sample_2 <- annotation_col$sample
 
 # Split the sample names into components
@@ -6337,9 +6416,9 @@ annotation_col <- annotation_col |>
 
 annotation_col_sc <- annotation_col |> 
   dplyr::filter(condition=="sclerotic") |> 
-  dplyr::left_join(md_df |> 
-              dplyr::filter(health_status == "sclerotic",
-                     tissue_celltype_lowercase == "pellet") |> 
+  dplyr::left_join(md_df_bone |> 
+              dplyr::filter(health_status == "sclerotic") |> 
+                     #tissue_celltype_lowercase == "pellet") |> 
               dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),
             by = c("sample_2"="sampleID"))
 
@@ -6348,6 +6427,7 @@ annotation_col_sc <- annotation_col_sc |>
   dplyr::left_join(oarsi_data_scores |> 
               dplyr::select(-non_sclerotic_samples),
             by=c("ID"="sampleID"))
+
 annotation_col_sc
 # Select only samples containing oarsi scores
 annotation_col_sc <- annotation_col_sc |> 
@@ -6357,16 +6437,15 @@ annotation_col_sc
 
 
 
-
-
+# Now only samples with non sclerotic OARSI scores.
 annotation_col_nsc <- annotation_col |> 
   dplyr::filter(condition == "non.sclerotic") |> 
-  dplyr::left_join(md_df |> 
-              dplyr::filter(health_status == "non.sclerotic",
-                     tissue_celltype_lowercase == "pellet") |> 
+  dplyr::left_join(md_df_bone |> 
+              dplyr::filter(health_status == "non.sclerotic") |> #,                     tissue_celltype_lowercase == "pellet") |> 
               dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate..
             by = c("sample_2"="sampleID"))
 annotation_col_nsc
+#105 is a lonely sample!
 
 annotation_col_nsc <- annotation_col_nsc |>
   dplyr::left_join(oarsi_data_scores |> 
@@ -6378,7 +6457,8 @@ annotation_col_nsc <- annotation_col_nsc |>
   dplyr::filter(!is.na(non_sclerotic_samples))
 
 
-
+annotation_col_nsc <- annotation_col_nsc |> dplyr::mutate(oarsi_score = non_sclerotic_samples) |> dplyr::select(-non_sclerotic_samples)
+annotation_col_sc  <- annotation_col_sc |> dplyr::mutate(oarsi_score = sclerotic_samples)  |> dplyr::select(-sclerotic_samples)
 
 annotation_col_oarsi_samples <- dplyr::bind_rows(annotation_col_sc,annotation_col_nsc)
 annotation_col_oarsi_samples
@@ -6388,13 +6468,18 @@ annotation_col_oarsi_samples
 ```{r,fig.height=4,fig.width=6}
 
 #df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b)
-annotation_col_oarsi_samples <- annotation_col_oarsi_samples |> 
-  dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
-  dplyr::select(-sclerotic_samples,-non_sclerotic_samples)
+# done above easily
+#annotation_col_oarsi_samples <- annotation_col_oarsi_samples |> 
+#  dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
+#  dplyr::select(-sclerotic_samples,-non_sclerotic_samples)
   
+norm_counts_oarsi <- as.data.frame(t(selected_data))
+# Add rownames as a column so you can join
+norm_counts_oarsi <- norm_counts_oarsi |> tibble::rownames_to_column(var = "sample_2")
+combined_data <- norm_counts_oarsi |> dplyr::left_join(annotation_col_oarsi_samples,by = c("sample_2"))
+combined_data
 
-norm_counts_oarsi <-  norm_counts[,annotation_col_oarsi_samples$sample_2]
-combined_data <- cbind(t(norm_counts_oarsi), annotation_col_oarsi_samples)
+
 # NO -- NA -- VALUES NOT ALLOWED
 
 
@@ -6404,6 +6489,7 @@ any(is.na(combined_data))
 sum(is.na(combined_data))
 combined_data <- na.omit(combined_data)
 dim(combined_data)
+combined_data[,c("sample_2",tail(colnames(combined_data),10))]
 #column_to_remove <- "MAMDC2-AS1"
 # combined_data <- combined_data %>% select(-all_of(column_to_remove))
 # Replace all hyphens with dots in column names
@@ -6413,7 +6499,7 @@ colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
 # combined_data <- combined_data %>% select(-matches("IT1$"))
 # combined_data <- combined_data %>% select(-matches("EGLN2$"))
 # combined_data <- combined_data %>% select(-matches("-3$"))
-combined_data <- combined_data |>  select(-type,-sample_2,-tissue)
+#combined_data <- combined_data |>  dplyr::select(-type,-sample_2,-tissue)
 dim(combined_data)
 
 
@@ -6423,47 +6509,580 @@ dim(combined_data)
 
 
 # Ensure the condition column is a factor
-combined_data$condition <- as.factor(combined_data$condition)
-combined_data$oarsi_score <- as.factor(combined_data$oarsi_score)
-combined_data$Age <- as.factor(combined_data$Age)
-combined_data$Gender <- as.factor(combined_data$Gender)
-combined_data$BMI <- as.factor(combined_data$BMI)
+combined_data$condition <- factor(combined_data$condition)
+combined_data$type <- factor(combined_data$type)
+combined_data$oarsi_score <- factor(combined_data$oarsi_score)
+combined_data$Age <- as.numeric(combined_data$Age)
+combined_data$Gender <- factor(combined_data$Gender)
+combined_data$BMI <- as.numeric(combined_data$BMI)
 #combined_data$Column.y <- as.factor(combined_data$Column.y)
 #combined_data$Row.y <- as.factor(combined_data$Row.y)
 colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
+combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 
-#combined_data$oarsi <- as.factor(combined_data$oarsi)
-# Split the data into training and testing sets
-set.seed(123) # For reproducibility
-trainIndex <- caret::createDataPartition(combined_data$condition, p = .7, 
-                                  list = FALSE, 
-                                  times = 1)
-train_data <- combined_data[trainIndex, ]
-test_data <- combined_data[-trainIndex, ]
-# Train rf model, excluding oarsi scores and see how does it affect.
-# rf_model_oarsi <- randomForest::randomForest(condition ~ . - oarsi, data = train_data, importance = TRUE)
-# Keep oarsi
-rf_model_oarsi <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000)
-# Predict on the test data
-predictions <- predict(rf_model_oarsi, test_data)
 
-# Evaluate the model
-caret::confusionMatrix(predictions, test_data$condition)
-
-# Feature importance
-randomForest::importance(rf_model_oarsi)
-randomForest::varImpPlot(rf_model_oarsi)
-
-# Get importance scores
-importance_scores <- importance(rf_model_oarsi)
-head(importance_scores[order(importance_scores[,3], decreasing = TRUE), ])
-
-print(rf_model)
 ```
 
 
 # Train model
 ```{r}
+# ================================================================
+# TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
+# ================================================================
+
+# Patient-wise splitting
+samples_per_patient <- table(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
+#paired_patients <- names(samples_per_patient)[samples_per_patient == 4 | samples_per_patient == 2] # leave those that have 3 as test!
+#pull all patients into one list 
+all_patients <- unique(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
+
+
+set.seed(123)
+n_train <- round(length(all_patients) * 0.8)
+train_patients <- sample(all_patients, n_train)
+test_patients  <- setdiff(all_patients, train_patients)
+
+
+# Create train/test datasets using the patient id so there is no patient leakage between training and testing.
+all.equal(sort(unique(gsub(x = md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients],pattern = "_.*",replacement = ""))),sort(train_patients))
+training_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients]
+testing_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% test_patients]
+
+train_data <- combined_data[combined_data$sample_2 %in% training_samples, ]
+test_data  <- combined_data[combined_data$sample_2 %in% testing_samples, ]
+
+train_data_clean <- train_data[rowSums(is.na(train_data)) != ncol(train_data), ]
+test_data_clean <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
+
+cat("Training samples:", nrow(train_data_clean), "\n")
+cat("Test samples:", nrow(test_data_clean), "\n")
+cat("Training patients:", length(train_patient_ids), "\n")
+cat("Test patients:", length(test_patient_ids), "\n")
+
+# Check condition distribution
+cat("\nTraining set condition distribution:\n")
+print(table(train_data_clean$condition))
+cat("\nTest set condition distribution:\n")
+print(table(test_data_clean$condition))
+
+# ================================================================
+# VISUALIZATION 1: DATA OVERVIEW AND QUALITY CHECK
+# ================================================================
+
+# Plot 1: Sample distribution
+p1 <- ggplot(combined_data, aes(x = condition, fill = condition)) +
+  geom_bar(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Sample Distribution by Condition",
+       x = "Condition", y = "Number of Samples") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 2: Age distribution by condition
+p2 <- ggplot(combined_data, aes(x = condition, y = Age, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Age Distribution by Condition",
+       x = "Condition", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 3: BMI distribution by condition
+p3 <- ggplot(combined_data, aes(x = condition, y = BMI, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "BMI Distribution by Condition",
+       x = "Condition", y = "BMI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 4: Gender distribution
+p4 <- ggplot(combined_data, aes(x = condition, fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Gender Distribution by Condition",
+       x = "Condition", y = "Count") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+
+
+# ================================================================
+# Drop near zero value columns, even though we removed above low variable genes
+# ==================================================================
+nzv <- caret::nearZeroVar(train_data_clean, saveMetrics = TRUE)
+drop_cols <- rownames(nzv)[nzv$nzv]
+train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_cols)]
+test_data_clean  <- test_data_clean[,  setdiff(names(test_data_clean), drop_cols)]
+
+
+# Visu
+train_data_clean[,c(2002:ncol(train_data_clean))]
+test_data_clean[,c(2002:ncol(test_data_clean))]
+
+
+
+# # 1. Drop IDs
+train_data_clean$patientID <- factor(gsub(x = train_data_clean$sample_2,pattern = "_.*",replacement = ""))
+test_data_clean$patientID <- factor(gsub(x = test_data_clean$sample_2,pattern = "_.*",replacement = ""))
+#groupids <- train_data_clean$patientID
+
+
+# drop_ids <- c("sample_2","sampleID","patientID","tissue","type")
+# train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_ids)]
+# test_data_clean  <- test_data_clean[, setdiff(names(test_data_clean), drop_ids)]
+
+
+# # 2. Optionally drop highly correlated predictors
+# library(caret)
+# corr_mtx <- cor(train_data_clean[ , sapply(train_data_clean,is.numeric)])
+# highCorr <- caret::findCorrelation(corr_mtx, cutoff = 0.95)  
+# # columns with pairwise |r|>0.90
+# if(length(highCorr)>0) {
+#   toDrop <- colnames(corr_mtx)[highCorr]
+#   message("removed if genes are correlated at more than 0.95")
+#   train_data_clean <- train_data_clean[ , setdiff(names(train_data_clean), toDrop)]
+#   test_data_clean  <- test_data_clean[ , setdiff(names(test_data_clean), toDrop)]
+# }
+
+
+
+
+# ================================================================
+# RANDOM FOREST MODEL TRAINING
+# ================================================================
+# Train Random Forest model with more detailed parameters --> Now determine mtry and ntree with grid.search.
+
+
+# 2A. Define a patient‐wise resampling strategy
+ctrl <- caret::trainControl(
+  method          = "cv",
+  number          = 5,                    # 5‐fold CV
+  #index           = caret::groupKFold(groupids, k = 5),                   # ensures no patient is in both train/test within a fold
+  index           = caret::groupKFold(train_data_clean$patientID, k = 5),                   # ensures no patient is in both train/test within a fold
+  classProbs      = TRUE,
+  summaryFunction = twoClassSummary,      # optimize for AUC
+  savePredictions = "final"
+)
+
+# 2B. Set up a tuning grid for mtry (and optionally nodesize)
+p <- ncol(train_data_clean) - 1            # minus your response column
+grid <- expand.grid(
+  mtry = floor(sqrt(p)) * c(0.5,1,2),       # e.g. half‐sqrt, sqrt, twice‐sqrt
+  splitrule = "gini",                      # for caret’s 'ranger' method alternative
+  min.node.size = c(1, 5, 10)
+)
+
+# 2C. Train
+set.seed(456)
+rf_tuned <- caret::train(
+  condition ~ . -sample_2 -patientID -tissue -type,
+  data      = train_data_clean,
+  method    = "ranger",                    # faster, supports min.node.size
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneGrid  = grid,
+  num.trees = 1000                          # start with 1 000 trees
+)
+
+print(rf_tuned)
+plot(rf_tuned)
+
+
+plot(rf_tuned$finalModel)  # error vs # trees
+
+
+
+# rf_model <- randomForest(formula = condition ~ .,
+#                          data = train_data_clean,
+#                          importance = TRUE,
+#                          #ntree = 9*ncol(train_data_clean),
+#                          #mtry = sqrt(ncol(train_data_clean)-4), # Approximately sqrt of features
+#                          do.trace = 100,
+#                          proximity = TRUE,
+#                          keep.forest = TRUE
+#                          )
+# 
+# print(rf_model)   -- > this is substituted by caret rf
+
+# ================================================================
+# VISUALIZATION 2: MODEL PERFORMANCE METRICS
+# ================================================================
+rf_model <- 
+
+
+# Predictions
+train_predictions <- predict(rf_model, train_data_clean, type = "response")
+test_predictions <- predict(rf_model, test_data_clean, type = "response")
+
+train_probs <- predict(rf_model, train_data_clean, type = "prob")
+test_probs <- predict(rf_model, test_data_clean, type = "prob")
+
+# Confusion Matrices
+train_cm <- caret::confusionMatrix(train_predictions, train_data_clean$condition)
+test_cm <- caret::confusionMatrix(test_predictions, test_data_clean$condition)
+
+print("Training Set Performance:")
+print(train_cm)
+print("\nTest Set Performance:")
+print(test_cm)
+
+# Plot 5: Confusion Matrix Heatmaps
+train_cm_df <- as.data.frame(train_cm$table)
+test_cm_df <- as.data.frame(test_cm$table)
+
+p5 <- ggplot(train_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Training Set Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+p6 <- ggplot(test_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Test Set Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+grid.arrange(p5, p6, ncol = 2)
+
+# ================================================================
+# VISUALIZATION 3: ROC CURVES AND AUC
+# ================================================================
+
+# ROC Analysis
+if(ncol(train_probs) >= 2) {
+  # Training ROC
+  train_roc <- roc(train_data_clean$condition, train_probs[,2])
+  test_roc <- roc(test_data_clean$condition, test_probs[,2])
+  
+  # Plot ROC curves
+  plot(train_roc, main = "ROC Curves Comparison", 
+       col = "blue", lwd = 2)
+  plot(test_roc, add = TRUE, col = "red", lwd = 2)
+  legend("bottomright", 
+         legend = c(paste("Training AUC =", round(train_roc$auc, 3)),
+                   paste("Test AUC =", round(test_roc$auc, 3))),
+         col = c("blue", "red"), lwd = 2)
+  
+  cat("Training AUC:", round(train_roc$auc, 3), "\n")
+  cat("Test AUC:", round(test_roc$auc, 3), "\n")
+}
+
+# ================================================================
+# VISUALIZATION 4: VARIABLE IMPORTANCE
+# ================================================================
+
+# Get importance measures
+importance_df <- data.frame(
+  Gene = rownames(rf_model$importance),
+  MeanDecreaseAccuracy = rf_model$importance[,3],
+  MeanDecreaseGini = rf_model$importance[,4]
+) |>
+  arrange(desc(MeanDecreaseAccuracy))
+
+# Plot 7: Top 20 Important Features - Mean Decrease Accuracy
+p7 <- importance_df |>
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(Gene, MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Top 20 Most Important Genes (Mean Decrease Accuracy)",
+       x = "Genes", y = "Mean Decrease Accuracy") +
+  theme_minimal()
+
+# Plot 8: Top 20 Important Features - Mean Decrease Gini
+p8 <- importance_df |>
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_col(fill = "darkgreen", alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Top 20 Most Important Genes (Mean Decrease Gini)",
+       x = "Genes", y = "Mean Decrease Gini") +
+  theme_minimal()
+
+grid.arrange(p7, p8, ncol = 1)
+
+# Plot importance using randomForest's built-in function
+varImpPlot(rf_model, main = "Variable Importance Plot")
+
+# ================================================================
+# VISUALIZATION 5: MODEL DIAGNOSTICS
+# ================================================================
+
+# Plot 9: Error Rate vs Number of Trees
+plot(rf_model, main = "Error Rate vs Number of Trees")
+legend("topright", legend = c("OOB", levels(train_data_clean$condition)), 
+       col = 1:(length(levels(train_data_clean$condition))+1), lty = 1)
+
+# Plot 10: Out-of-Bag Error Rate
+oob_error <- rf_model$err.rate[,1]
+p10 <- data.frame(Trees = 1:length(oob_error), OOB_Error = oob_error) |>
+  ggplot(aes(x = Trees, y = OOB_Error)) +
+  geom_line(color = "red", size = 1) +
+  labs(title = "Out-of-Bag Error Rate vs Number of Trees",
+       x = "Number of Trees", y = "OOB Error Rate") +
+  theme_minimal()
+
+print(p10)
+
+# ================================================================
+# VISUALIZATION 6: MULTIDIMENSIONAL SCALING (MDS) PLOT
+# ================================================================
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+
+# MDS plot using proximity matrix, value of distances is more important than the "rank"  (better for interpretation)
+if (!is.null(rf_model$proximity)) {
+  dist_mat <- 1 - rf_model$proximity
+  
+  # Classical MDS (metric)
+  mds_metric <- cmdscale(dist_mat, k = 2)
+  mds_metric_df <- data.frame(
+    MDS1 = mds_metric[, 1],
+    MDS2 = mds_metric[, 2],
+    Condition = train_data_clean$condition,
+    Predicted = train_predictions
+  )
+  
+  # Non-metric MDS, rank of distances is more important than the actual values for the proximity 
+  # Very useful when your distances are semantic, ordinal, or not reliable in scale (random forest values...) semantic
+  # very useful for rf results visu
+  mds_nonmetric <- isoMDS(dist_mat, k = 2)
+  mds_nonmetric_df <- data.frame(
+    MDS1 = mds_nonmetric$points[, 1],
+    MDS2 = mds_nonmetric$points[, 2],
+    Condition = train_data_clean$condition,
+    Predicted = train_predictions
+  )
+  
+  # Plot 11: Classical MDS - colored by actual condition
+  p11 <- ggplot(mds_metric_df, aes(x = MDS1, y = MDS2, color = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Set1") +
+    labs(title = "Classical MDS - Colored by Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 12: Classical MDS - colored by predictions
+  p12 <- ggplot(mds_metric_df, aes(x = MDS1, y = MDS2, color = Predicted, shape = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Dark2") +
+    labs(title = "Classical MDS - Predictions vs Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 13: Non-metric MDS - colored by actual condition
+  p13 <- ggplot(mds_nonmetric_df, aes(x = MDS1, y = MDS2, color = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Set1") +
+    labs(title = "Non-metric MDS - Colored by Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 14: Non-metric MDS - colored by predictions
+  p14 <- ggplot(mds_nonmetric_df, aes(x = MDS1, y = MDS2, color = Predicted, shape = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Dark2") +
+    labs(title = "Non-metric MDS - Predictions vs Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Display all four plots in a 2x2 grid
+  grid.arrange(p11, p12, p13, p14, ncol = 2)
+}
+
+# ================================================================
+# VISUALIZATION 7: GENE EXPRESSION HEATMAP
+# ================================================================
+
+# Create heatmap of top important genes
+top_genes <- importance_df$Gene[1:50]  # Top 50 most important genes
+valid_genes <- top_genes[top_genes %in% rownames(norm_counts)]
+heatmap_data <- norm_counts[valid_genes, ]
+
+# Prepare annotation data
+annotation_col <- as.data.frame(colnames(norm_counts))
+colnames(annotation_col) <- "sample"
+annotation_col$sample_2 <- annotation_col$sample
+
+# Split sample names
+annotation_col <- annotation_col |> 
+  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
+
+# safety colname 
+#annotation_col_rownames_safety_check <- annotation_col$sample_2
+# Add metadata (BMI, Age, Gender)
+heatmap_annotation <- annotation_col |> 
+  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
+
+rownames(heatmap_annotation) <- colnames(heatmap_data)
+
+# Create heatmap
+pheatmap(
+  heatmap_data,
+  annotation_col = heatmap_annotation,
+  scale = "row",
+  clustering_distance_rows = "correlation",
+  clustering_distance_cols = "correlation",
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "Heatmap of Top 50 Most Important Genes",
+  fontsize_row = 6,
+  color = colorRampPalette(c("blue", "white", "red"))(100)
+)
+
+# ================================================================
+# VISUALIZATION 8: PARTIAL DEPENDENCE PLOTS
+# ================================================================
+
+# Partial dependence plots for top 6 genes
+top_6_genes <- importance_df$Gene[1:6]
+
+par(mfrow = c(2, 3))
+for(gene in top_6_genes) {
+  partialPlot(rf_model, train_data_clean, x.var = paste0(gene), main = paste("Partial Dependence:", gene))
+}
+par(mfrow = c(1, 1))
+
+# ================================================================
+# COMPREHENSIVE MODEL SUMMARY AND INTERPRETATION
+# ================================================================
+
+
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+cat("COMPREHENSIVE RANDOM FOREST MODEL ANALYSIS SUMMARY\n")
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+
+cat("\n1. DATA OVERVIEW:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Total samples:", nrow(combined_data), "\n")
+cat("- Total features (genes):", ncol(combined_data) - 4, "\n")
+cat("- Training samples:", nrow(train_data_clean), "\n")
+cat("- Test samples:", nrow(test_data_clean), "\n")
+cat("- Class distribution (overall):", table(combined_data$condition), "\n")
+
+cat("\n2. MODEL CONFIGURATION:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Number of trees:", rf_model$ntree, "\n")
+cat("- Features per split (mtry):", rf_model$mtry, "\n")
+cat("- OOB Error Rate:", round(rf_model$err.rate[rf_model$ntree, 1] * 100, 2), "%\n")
+
+cat("\n3. PERFORMANCE METRICS:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("Training Accuracy:", round(train_cm$overall['Accuracy'] * 100, 2), "%\n")
+cat("Test Accuracy:", round(test_cm$overall['Accuracy'] * 100, 2), "%\n")
+cat("Training Sensitivity:", round(train_cm$byClass['Sensitivity'] * 100, 2), "%\n")
+cat("Test Sensitivity:", round(test_cm$byClass['Sensitivity'] * 100, 2), "%\n")
+cat("Training Specificity:", round(train_cm$byClass['Specificity'] * 100, 2), "%\n")
+cat("Test Specificity:", round(test_cm$byClass['Specificity'] * 100, 2), "%\n")
+
+if(exists("train_roc")) {
+  cat("Training AUC:", round(train_roc$auc, 3), "\n")
+  cat("Test AUC:", round(test_roc$auc, 3), "\n")
+}
+
+cat("\n4. TOP 10 MOST IMPORTANT GENES:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+for(i in 1:10) {
+  cat(sprintf("%2d. %s (MDA: %.4f, MDG: %.4f)\n", 
+              i, importance_df$Gene[i], 
+              importance_df$MeanDecreaseAccuracy[i],
+              importance_df$MeanDecreaseGini[i]))
+}
+
+cat("\n5. MODEL INTERPRETATION:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- The Random Forest model shows", 
+    ifelse(test_cm$overall['Accuracy'] > 0.8, "excellent", 
+           ifelse(test_cm$overall['Accuracy'] > 0.7, "good", "moderate")), 
+    "predictive performance\n")
+
+cat("- OOB error of", round(rf_model$err.rate[rf_model$ntree, 1] * 100, 2), 
+    "% indicates", 
+    ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.1, "excellent", 
+           ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.2, "good", "moderate")),
+    "model generalization\n")
+
+if(exists("test_roc")) {
+  cat("- AUC of", round(test_roc$auc, 3), "suggests", 
+      ifelse(test_roc$auc > 0.9, "excellent", 
+             ifelse(test_roc$auc > 0.8, "good", "fair")), 
+      "discriminative ability\n")
+}
+
+cat("- The top important genes likely represent key biomarkers\n")
+cat("  distinguishing sclerotic from non-sclerotic conditions\n")
+
+cat("\n6. BIOLOGICAL INTERPRETATION:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Gene expression patterns successfully differentiate conditions\n")
+cat("- Important genes may be involved in:\n")
+# cat("  * Bone remodeling and sclerosis pathways\n")
+# cat("  * Inflammatory responses\n")
+# cat("  * Extracellular matrix regulation\n")
+# cat("  * Adipocyte differentiation and function\n")
+# Add enrichR results top 3 pathwas gobp, kegg and reactome.
+# Perform enrichR
+#install.packages("enrichR")
+```
+
+
+```{r}
+library(enrichR)
+websiteLive <- getOption("enrichR.live")
+if (websiteLive) {
+    listEnrichrSites()
+    setEnrichrSite("Enrichr") # Human genes   
+}
+if (websiteLive) dbs <- listEnrichrDbs()
+#dbs <- listEnrichrDbs()
+dbs
+
+#pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
+hip_adipocytes_sclerotic_vs_non_sclerotic$results$table |> dplyr::filter(FDR < 0.05)
+
+
+message(paste0("Working on sample: ",hip_adipocytes_sclerotic_vs_non_sclerotic$name))
+
+dbs <- c('GO_Cellular_Component_2017','GO_Molecular_Function_2017','GO_Biological_Process_2017','CellMarker_2024')
+enriched <- enrichr(genes = c(hip_adipocytes_sclerotic_vs_non_sclerotic$results$table |> dplyr::filter(FDR < 0.05) |> 
+                      #dplyr::filter(!grepl(x = genes,pattern = "^Gm\\d+")) |>
+                      #dplyr::filter(!grepl(x = genes,pattern = "*Rik$")) |> 
+                      dplyr::filter(!is.na(genes)) |> 
+                      dplyr::filter(genes != "") |>
+                      dplyr::filter(!grepl(x = genes, pattern = "ENSG")) |>
+                      dplyr::pull(genes)), databases = dbs)
+
+enriched
+
+enriched[["CellMarker_2024"]]
+# plot the enrichment 3 from dbs GOBP
+
+#enriched
+#enriched$CellMarker_2024
+write.table(enriched[["CellMarker_2024"]],file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/hip_patient/HSA_vs_HNSA_enriched_papers_enrichR.csv",
+            sep = ",",row.names = FALSE,col.names = TRUE)
+plotEnrich(enriched[[4]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+
+
+
+cat("\n7. RECOMMENDATIONS:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Validate top biomarker genes in independent cohorts\n")
+cat("- Investigate biological pathways of important genes\n")
+cat("- Consider ensemble methods for improved performance\n")
+cat("- Perform functional enrichment analysis of top genes\n")
+
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+
 ```
 
 # Use data
