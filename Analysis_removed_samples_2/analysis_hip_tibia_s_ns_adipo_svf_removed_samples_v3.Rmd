@@ -6522,6 +6522,193 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 
 
 ```
+```{r}
+# ================================================================
+# PRE-PROCESSING & FEATURE SELECTION (on training data ONLY)
+# ================================================================
+
+
+# ================================================================
+# TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
+# ================================================================
+
+# Identify all unique patients in your dataset
+all_patients <- unique(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
+head(all_patients)
+
+set.seed(123)
+train_proportion <- 0.8
+n_train <- round(length(all_patients) * train_proportion)
+train_patients <- sample(all_patients, n_train)
+test_patients  <- setdiff(all_patients, train_patients)
+
+# Map patient IDs back to sample IDs
+training_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients]
+testing_samples  <- md_df_bone$sampleID[md_df_bone$sample_number %in% test_patients]
+
+# Subset combined_data into train/test
+train_data <- combined_data[combined_data$sample_2 %in% training_samples, ]
+test_data  <- combined_data[combined_data$sample_2 %in% testing_samples, ]
+
+# Drop rows with all NAs (if any)
+train_data_clean <- train_data[rowSums(is.na(train_data)) != ncol(train_data), ]
+test_data_clean  <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
+
+cat("Training samples:", nrow(train_data_clean), "\n")
+cat("Test samples:    ", nrow(test_data_clean),  "\n")
+cat("Training patients:", length(train_patients), "\n")
+cat("Test patients:    ", length(test_patients),  "\n")
+
+# ================================================================
+# VISUALIZATION 1: DATA OVERVIEW AND QUALITY CHECK
+# ================================================================
+
+# Plot 1: Sample distribution
+p1 <- ggplot(combined_data, aes(x = condition, fill = condition)) +
+  geom_bar(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Sample Distribution by Condition",
+       x = "Condition", y = "Number of Samples") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 2: Age distribution by condition
+p2 <- ggplot(combined_data, aes(x = condition, y = Age, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Age Distribution by Condition",
+       x = "Condition", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 3: BMI distribution by condition
+p3 <- ggplot(combined_data, aes(x = condition, y = BMI, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "BMI Distribution by Condition",
+       x = "Condition", y = "BMI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 4: Gender distribution
+p4 <- ggplot(combined_data, aes(x = condition, fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Gender Distribution by Condition",
+       x = "Condition", y = "Count") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+
+# --- Ensure 'condition' is a factor with consistent levels ---
+# This is a critical step to prevent prediction errors later
+train_data_clean$condition <- factor(train_data_clean$condition)
+test_data_clean$condition  <- factor(test_data_clean$condition, levels = levels(train_data_clean$condition))
+
+# --- Define the grouping variable for CV ---
+# This uses the original, unfiltered training data to ensure all samples are accounted for
+groupids <- factor(gsub("_.*", "", train_data_clean$sample_2))
+
+
+
+
+# --- Safely identify predictor columns ---
+# We separate metadata/outcome from the gene predictors
+outcome_name <- "condition"
+all_cols <- names(train_data_clean)
+# Assuming metadata columns might be present, we explicitly name them to exclude them from feature selection
+# Adjust this list if you have other metadata columns
+#metadata_cols <- c("sample_2", "Age", "Gender", "BMI", "type", "tissue", "patientID")
+metadata_cols <- c("sample_2", "type", "tissue", "patientID","ID")
+# Predictors are columns that are NOT the outcome and NOT metadata
+predictor_names <- setdiff(all_cols, c(outcome_name, metadata_cols))
+
+
+# --- Apply nearZeroVar ONLY to the numeric predictors ---
+nzv <- nearZeroVar(train_data_clean[, predictor_names], saveMetrics = TRUE)
+drop_nzv_cols <- rownames(nzv)[nzv$nzv]
+
+if (length(drop_nzv_cols) > 0) {
+  cat("Removing", length(drop_nzv_cols), "near-zero variance predictors.\n")
+  # Update the list of predictors to use
+  predictor_names <- setdiff(predictor_names, drop_nzv_cols)
+} else {
+  cat("No near-zero variance predictors found to remove.\n")
+}
+
+
+# --- Create final, clean data frames for modeling ---
+# This ensures train/test sets have the exact same columns
+final_train_data <- train_data_clean[, c(outcome_name, predictor_names)]
+final_test_data  <- test_data_clean[,  c(outcome_name, predictor_names)]
+
+
+# ================================================================
+# RANDOM FOREST MODEL TRAINING with patient-wise CV
+# ================================================================
+
+# 2A. Define patient-wise CV folds
+# NOTE: If you still get an error that ROC metrics are missing, it's likely
+# because a fold has samples from only one class. The best fix is to
+# reduce 'k' (e.g., from 5 to 3), which makes each fold larger.
+set.seed(123) # for reproducible folds
+cv_folds <- groupKFold(groupids, k = 5) #️ TRY k = 3 IF THIS FAILS
+
+ctrl <- trainControl(
+  method          = "cv",
+  index           = cv_folds,
+  classProbs      = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final",
+  allowParallel   = TRUE # Recommended for speed
+)
+
+# 2B. Tuning grid
+p_final <- ncol(final_train_data) - 1
+grid <- expand.grid(
+  mtry          = floor(sqrt(p_final) * c(0.5, 1, 2)),
+  splitrule     = "gini",
+  min.node.size = c(1, 5, 10)
+)
+
+# 2C. Train with caret + ranger
+set.seed(456)
+rf_tuned <- train(
+  condition ~ .,
+  data      = final_train_data,
+  method    = "ranger",
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneGrid  = grid,
+  num.trees = 1000,
+  importance = 'impurity' # Optional: to calculate variable importance (gini), need "accuracy" too use =permutation
+)
+
+print(rf_tuned)
+plot(rf_tuned)
+
+library(ggplot2)
+ggplot(rf_tuned) + theme_minimal()
+
+
+# ================================================================
+# MODEL EVALUATION
+# ================================================================
+# Predictions
+train_predictions <- predict(rf_tuned, final_train_data)
+test_predictions  <- predict(rf_tuned, final_test_data)
+
+# Confusion Matrices
+train_cm <- caret::confusionMatrix(train_predictions, final_train_data$condition)
+test_cm  <- caret::confusionMatrix(test_predictions,  final_test_data$condition)
+
+print("Training Set Performance:")
+print(train_cm)
+print("\nTest Set Performance:")
+print(test_cm)
+```
 
 
 # Train model
@@ -6530,40 +6717,32 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 # TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
 # ================================================================
 
-# Patient-wise splitting
-samples_per_patient <- table(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
-#paired_patients <- names(samples_per_patient)[samples_per_patient == 4 | samples_per_patient == 2] # leave those that have 3 as test!
-#pull all patients into one list 
+# Identify all unique patients in your dataset
 all_patients <- unique(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
-
+head(all_patients)
 
 set.seed(123)
-n_train <- round(length(all_patients) * 0.8)
+train_proportion <- 0.8
+n_train <- round(length(all_patients) * train_proportion)
 train_patients <- sample(all_patients, n_train)
 test_patients  <- setdiff(all_patients, train_patients)
 
-
-# Create train/test datasets using the patient id so there is no patient leakage between training and testing.
-all.equal(sort(unique(gsub(x = md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients],pattern = "_.*",replacement = ""))),sort(train_patients))
+# Map patient IDs back to sample IDs
 training_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients]
-testing_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% test_patients]
+testing_samples  <- md_df_bone$sampleID[md_df_bone$sample_number %in% test_patients]
 
+# Subset combined_data into train/test
 train_data <- combined_data[combined_data$sample_2 %in% training_samples, ]
 test_data  <- combined_data[combined_data$sample_2 %in% testing_samples, ]
 
+# Drop rows with all NAs (if any)
 train_data_clean <- train_data[rowSums(is.na(train_data)) != ncol(train_data), ]
-test_data_clean <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
+test_data_clean  <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
 
 cat("Training samples:", nrow(train_data_clean), "\n")
-cat("Test samples:", nrow(test_data_clean), "\n")
-cat("Training patients:", length(train_patient_ids), "\n")
-cat("Test patients:", length(test_patient_ids), "\n")
-
-# Check condition distribution
-cat("\nTraining set condition distribution:\n")
-print(table(train_data_clean$condition))
-cat("\nTest set condition distribution:\n")
-print(table(test_data_clean$condition))
+cat("Test samples:    ", nrow(test_data_clean),  "\n")
+cat("Training patients:", length(train_patients), "\n")
+cat("Test patients:    ", length(test_patients),  "\n")
 
 # ================================================================
 # VISUALIZATION 1: DATA OVERVIEW AND QUALITY CHECK
@@ -6612,113 +6791,74 @@ grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
 # ================================================================
 # Drop near zero value columns, even though we removed above low variable genes
 # ==================================================================
-nzv <- caret::nearZeroVar(train_data_clean, saveMetrics = TRUE)
+library(caret)
+nzv <- nearZeroVar(train_data_clean, saveMetrics = TRUE)
 drop_cols <- rownames(nzv)[nzv$nzv]
 train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_cols)]
 test_data_clean  <- test_data_clean[,  setdiff(names(test_data_clean), drop_cols)]
 
+# ================================================================
+# ADD patientID for grouping only (will be excluded from model)
+# ================================================================
+train_data_clean$patientID <- factor(gsub("_.*", "", train_data_clean$sample_2))
+test_data_clean$patientID  <- factor(gsub("_.*", "", test_data_clean$sample_2))
 
-# Visu
-train_data_clean[,c(2002:ncol(train_data_clean))]
-test_data_clean[,c(2002:ncol(test_data_clean))]
-
-
-
-# # 1. Drop IDs
-train_data_clean$patientID <- factor(gsub(x = train_data_clean$sample_2,pattern = "_.*",replacement = ""))
-test_data_clean$patientID <- factor(gsub(x = test_data_clean$sample_2,pattern = "_.*",replacement = ""))
-#groupids <- train_data_clean$patientID
+groupids <- train_data_clean$patientID
 
 
-# drop_ids <- c("sample_2","sampleID","patientID","tissue","type")
-# train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_ids)]
-# test_data_clean  <- test_data_clean[, setdiff(names(test_data_clean), drop_ids)]
-
-
-# # 2. Optionally drop highly correlated predictors
-# library(caret)
-# corr_mtx <- cor(train_data_clean[ , sapply(train_data_clean,is.numeric)])
-# highCorr <- caret::findCorrelation(corr_mtx, cutoff = 0.95)  
-# # columns with pairwise |r|>0.90
-# if(length(highCorr)>0) {
-#   toDrop <- colnames(corr_mtx)[highCorr]
-#   message("removed if genes are correlated at more than 0.95")
-#   train_data_clean <- train_data_clean[ , setdiff(names(train_data_clean), toDrop)]
-#   test_data_clean  <- test_data_clean[ , setdiff(names(test_data_clean), toDrop)]
-# }
-
+drop_cols <- c("sample_2", "type", "tissue", "patientID", "ID")
+train_data_clean <- train_data_clean[, !(names(train_data_clean) %in% drop_cols)]
+test_data_clean  <- test_data_clean[, !(names(test_data_clean) %in% drop_cols)]
 
 
 
 # ================================================================
-# RANDOM FOREST MODEL TRAINING
+# RANDOM FOREST MODEL TRAINING with patient-wise CV
 # ================================================================
-# Train Random Forest model with more detailed parameters --> Now determine mtry and ntree with grid.search.
-
-
-# 2A. Define a patient‐wise resampling strategy
-ctrl <- caret::trainControl(
+# 2A. Define patient-wise CV folds
+ctrl <- trainControl(
   method          = "cv",
-  number          = 5,                    # 5‐fold CV
-  #index           = caret::groupKFold(groupids, k = 5),                   # ensures no patient is in both train/test within a fold
-  index           = caret::groupKFold(train_data_clean$patientID, k = 5),                   # ensures no patient is in both train/test within a fold
+  number          = 5,
+  #index           = groupKFold(train_data_clean$patientID, k = 5),
+  index           = groupKFold(groupids, k = 5),
   classProbs      = TRUE,
-  summaryFunction = twoClassSummary,      # optimize for AUC
+  summaryFunction = twoClassSummary,
   savePredictions = "final"
 )
 
-# 2B. Set up a tuning grid for mtry (and optionally nodesize)
-p <- ncol(train_data_clean) - 1            # minus your response column
+# 2B. Tuning grid
+p <- ncol(train_data_clean) - 1  # minus response
 grid <- expand.grid(
-  mtry = floor(sqrt(p)) * c(0.5,1,2),       # e.g. half‐sqrt, sqrt, twice‐sqrt
-  splitrule = "gini",                      # for caret’s 'ranger' method alternative
-  min.node.size = c(1, 5, 10)
+  mtry         = floor(sqrt(p)) * c(0.5, 1, 2),
+  splitrule    = "gini",
+  min.node.size= c(1, 5, 10)
 )
 
-# 2C. Train
+# 2C. Train with caret + ranger
 set.seed(456)
-rf_tuned <- caret::train(
-  condition ~ . -sample_2 -patientID -tissue -type,
+rf_tuned <- train(
+  condition ~ .,
   data      = train_data_clean,
-  method    = "ranger",                    # faster, supports min.node.size
+  method    = "ranger",
   metric    = "ROC",
   trControl = ctrl,
   tuneGrid  = grid,
-  num.trees = 1000                          # start with 1 000 trees
+  num.trees = 1000,
+  importance = 'impurity'
 )
-
 print(rf_tuned)
 plot(rf_tuned)
 
 
-plot(rf_tuned$finalModel)  # error vs # trees
-
-
-
-# rf_model <- randomForest(formula = condition ~ .,
-#                          data = train_data_clean,
-#                          importance = TRUE,
-#                          #ntree = 9*ncol(train_data_clean),
-#                          #mtry = sqrt(ncol(train_data_clean)-4), # Approximately sqrt of features
-#                          do.trace = 100,
-#                          proximity = TRUE,
-#                          keep.forest = TRUE
-#                          )
-# 
-# print(rf_model)   -- > this is substituted by caret rf
-
 # ================================================================
-# VISUALIZATION 2: MODEL PERFORMANCE METRICS
+# VISUALIZATION 2: MODEL PERFORMANCE
 # ================================================================
-rf_model <- 
-
-
 # Predictions
-train_predictions <- predict(rf_model, train_data_clean, type = "response")
-test_predictions <- predict(rf_model, test_data_clean, type = "response")
+train_predictions <- predict(rf_tuned, train_data_clean)#, type = "response")
+test_predictions <- predict(rf_tuned, test_data_clean)#, type = "response")
 
-train_probs <- predict(rf_model, train_data_clean, type = "prob")
-test_probs <- predict(rf_model, test_data_clean, type = "prob")
+train_probs <- predict(rf_tuned, train_data_clean, type = "prob")
+test_probs <- predict(rf_tuned, test_data_clean, type = "prob")
 
 # Confusion Matrices
 train_cm <- caret::confusionMatrix(train_predictions, train_data_clean$condition)
@@ -6750,7 +6890,10 @@ p6 <- ggplot(test_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
   theme_minimal()
 
 grid.arrange(p5, p6, ncol = 2)
+```
 
+
+```{r}
 # ================================================================
 # VISUALIZATION 3: ROC CURVES AND AUC
 # ================================================================
@@ -6773,44 +6916,106 @@ if(ncol(train_probs) >= 2) {
   cat("Training AUC:", round(train_roc$auc, 3), "\n")
   cat("Test AUC:", round(test_roc$auc, 3), "\n")
 }
+```
 
+
+```{r}
 # ================================================================
 # VISUALIZATION 4: VARIABLE IMPORTANCE
 # ================================================================
+# 1. Extract importance using caret's varImp function
+importance_scores_gini <- caret::varImp(rf_tuned, scale = FALSE)
 
-# Get importance measures
-importance_df <- data.frame(
-  Gene = rownames(rf_model$importance),
-  MeanDecreaseAccuracy = rf_model$importance[,3],
-  MeanDecreaseGini = rf_model$importance[,4]
-) |>
-  arrange(desc(MeanDecreaseAccuracy))
+# 2. Prepare the data for plotting
+# The scores are inside the 'importance' slot of the returned object
+importance_df_gini <- as.data.frame(importance_scores_gini$importance)
+importance_df_gini$Gene <- rownames(importance_df_gini)
+# The importance value is in a column named "Overall"
+names(importance_df_gini)[1] <- "MeanDecreaseGini"
 
-# Plot 7: Top 20 Important Features - Mean Decrease Accuracy
-p7 <- importance_df |>
-  slice_head(n = 20) |>
-  ggplot(aes(x = reorder(Gene, MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
-  geom_col(fill = "steelblue", alpha = 0.7) +
+
+# 3. Plot the top 20 most important genes
+p_importance_gini <- importance_df_gini |> 
+  # Arrange by importance and take the top 20
+  dplyr::arrange(desc(MeanDecreaseGini)) |> 
+  dplyr::slice_head(n = 20) |>
+  
+  # Plot
+  ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_col(fill = "#2c7fb8", alpha = 0.9) +
   coord_flip() +
-  labs(title = "Top 20 Most Important Genes (Mean Decrease Accuracy)",
-       x = "Genes", y = "Mean Decrease Accuracy") +
+  labs(
+    title = "Top 20 Most Important Genes",
+    subtitle = "Based on Gini Impurity Decrease",
+    x = "Genes",
+    y = "Importance Score"
+  ) +
   theme_minimal()
 
+print(p_importance_gini)
+
+
+
 # Plot 8: Top 20 Important Features - Mean Decrease Gini
-p8 <- importance_df |>
+p7 <- importance_df_gini |>
   slice_head(n = 20) |>
   ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
   geom_col(fill = "darkgreen", alpha = 0.7) +
   coord_flip() +
-  labs(title = "Top 20 Most Important Genes (Mean Decrease Gini)",
+  labs(title = "Top 20 Most Important Genes", subtitle="Mean Decrease Gini",
        x = "Genes", y = "Mean Decrease Gini") +
   theme_minimal()
+p7
+# You can also use caret's built-in plot for a quick look
+plot(importance_scores_gini, top = 20)
+
+
+#########################
+#MeanDecreaseAccuracy   # previous model does gini, this makes accuracy
+#########################
+# Retrain the model to calculate permutation importance
+set.seed(456)
+rf_tuned_accuracy <- train(
+  condition ~ .,
+  data      = final_train_data,
+  method    = "ranger",
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneGrid  = grid,
+  num.trees = 1000,
+  importance = 'permutation' #  This is the only change
+)
+
+
+# Now you can extract and plot this new importance metric
+importance_scores_acc <- varImp(rf_tuned_accuracy, scale = FALSE)
+importance_df_accuracy <- as.data.frame(importance_scores_acc$importance)
+importance_df_accuracy$Gene <- rownames(importance_df_accuracy)
+names(importance_df_accuracy)[1] <- "MeanDecreaseAccuracy"
+
+
+# Plot 8: Top 20 Important Features - Mean Decrease Accuracy
+p8 <- importance_df_accuracy |>
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(Gene, MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Top 20 Most Important Genes" ,subtitle = "Mean Decrease Accuracy",
+       x = "Genes", y = "Mean Decrease Accuracy") +
+  theme_minimal()
+p8
+plot(importance_scores_acc, top = 20)
+
 
 grid.arrange(p7, p8, ncol = 1)
 
-# Plot importance using randomForest's built-in function
-varImpPlot(rf_model, main = "Variable Importance Plot")
 
+# Plot importance using randomForest's built-in function
+#varImpPlot(rf_tuned, main = "Variable Importance Plot") --> not the same for caret
+```
+
+
+```{r}
 # ================================================================
 # VISUALIZATION 5: MODEL DIAGNOSTICS
 # ================================================================
