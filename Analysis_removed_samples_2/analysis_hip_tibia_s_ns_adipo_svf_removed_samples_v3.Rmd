@@ -6622,6 +6622,15 @@ drop_cols <- c("sample_2", "type", "tissue", "patientID", "ID")
 train_data_clean <- train_data_clean[, !(names(train_data_clean) %in% drop_cols)]
 test_data_clean  <- test_data_clean[, !(names(test_data_clean) %in% drop_cols)]
 
+train_data_clean[,(tail(colnames(train_data_clean)))]
+test_data_clean[,(tail(colnames(test_data_clean)))]
+non_numeric_cols = c("condition","Gender","BMI","oarsi_score")
+
+train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
+test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
+
+
+
 
 
 # ================================================================
@@ -7182,7 +7191,25 @@ if(exists("test_roc")) {
 cat("- The top important genes likely represent key biomarkers\n")
 cat("  distinguishing sclerotic from non-sclerotic conditions\n")
 ```
+```{r}
+table(train_data_clean$condition)
+table(test_data_clean$condition)
 
+```
+
+
+```{r}
+#oarsi_samples model
+saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/oarsi_samples_rf_model.rds")
+
+```
+
+# Check correlation of top50 genes (check for gini and accuracy)
+```{r}
+cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
+heatmap(cor_mat)
+
+```
 
 
 # Use data
@@ -7205,62 +7232,22 @@ cat("  distinguishing sclerotic from non-sclerotic conditions\n")
 ```{r}
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Test for performance of other models.
 ```{r}
+train_data_clean[,(tail(colnames(train_data_clean)))]
+test_data_clean[,(tail(colnames(test_data_clean)))]
 
+non_numeric_cols = c("condition","Gender","BMI","oarsi_score")
 ```
 
-
 ```{r}
-#################
-### Cancer dataset
-#################
-
-library(mlbench)
-data(BreastCancer)
-head(BreastCancer)
+train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
+test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
 
 
-bc.df=BreastCancer
-class(bc.df)
 
-set.seed(123)
-
-#import dataset, rename labels
-
-bc.df$Class = as.factor(bc.df$Class)
-bc.df = dplyr::rename(bc.df,labels = Class)
-
-bc.df[1:10] <- sapply(bc.df[1:10], as.numeric)
-
-bc.df=bc.df[2:11]
-
-trn_indx <- createDataPartition(bc.df$labels ,
-                                p = .7, list = FALSE,times = 1) %>% as.numeric()
-tst_indx <- which(!(seq_len(nrow(bc.df)) %in% trn_indx))
-train = bc.df[trn_indx,]
-test = bc.df[tst_indx,]
+train =train_data_clean
+test = test_data_clean
 
 #?preProcess
 #Pre-prrocess the train Dataset
@@ -7274,16 +7261,16 @@ pp_test <- predict(preprocTest, test)
 
 ###rpart
 set.seed(123)
-rpart = caret::train(labels~ .,
+rpart = caret::train(condition~ .,
                      data=pp_train,
                      method = 'rpart')
 
 pred = predict(rpart,pp_test,type="raw")
 pred.in.sample = predict(rpart,pp_train,type="raw")
-mean(pred != pp_test$labels)
-mean(pred.in.sample != pp_train$labels)
+mean(pred != pp_test$condition)
+mean(pred.in.sample != pp_train$condition)
 
-cMatrixRpart=confusionMatrix(pred,pp_test$labels)
+cMatrixRpart=confusionMatrix(pred,pp_test$condition)
 
 plt <- as.data.frame(cMatrixRpart$table)
 ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
@@ -7300,18 +7287,18 @@ trcontrol <- trainControl(method = "repeatedcv",
                           repeats = 1,
                           search = "grid")
 
-rf_train = caret::train(labels~ .,
+rf_train = caret::train(condition~ .,
                         data=pp_train,
                         trControl = trcontrol,
                         tuneGrid = tunegrid,
-                        method = 'parRF')
+                        method = 'parRF')#use ranger for comparison above!
 
 pred = predict(rf_train,pp_test,type="raw")
 pred.in.sample = predict(rf_train,pp_train,type="raw")
-mean(pred != pp_test$labels)
-mean(pred.in.sample != pp_train$labels)
+mean(pred != pp_test$condition)
+mean(pred.in.sample != pp_train$condition)
 
-cMatrixRF=confusionMatrix(pred,pp_test$labels)
+cMatrixRF=confusionMatrix(pred,pp_test$condition)
 
 plt <- as.data.frame(cMatrixRF$table)
 ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
@@ -7342,7 +7329,7 @@ trcontrol <- trainControl(method = "repeatedcv",
 
 
 set.seed(123)
-xgb_train = train(labels~ .,
+xgb_train = train(condition~ .,
                   data=pp_train,
                   trControl = trcontrol,
                   tuneGrid = tunegrid,
@@ -7352,10 +7339,10 @@ plot(xgb_train)
 
 pred = predict(xgb_train,pp_test,type="raw")
 pred.in.sample = predict(xgb_train,pp_train,type="raw")
-mean(pred != pp_test$labels)
-mean(pred.in.sample != pp_train$labels)
+mean(pred != pp_test$condition)
+mean(pred.in.sample != pp_train$condition)
 
-cMatrixXGB=confusionMatrix(pred,pp_test$labels)
+cMatrixXGB=confusionMatrix(pred,pp_test$condition)
 
 cMatrix$byClass
 
@@ -7386,7 +7373,7 @@ tune_grid <- expand.grid(
   decay = c(0.01,0.1,0.2))
 
 set.seed(123)
-mod_nnet = caret::train(labels~ .,
+mod_nnet = caret::train(condition~ .,
                         data=pp_train,
                         method = "nnet",
                         trControl = trcontrol,
@@ -7397,10 +7384,10 @@ plot(mod_nnet)
 
 pred = predict(mod_nnet,pp_test,type="raw")
 pred.in.sample = predict(mod_nnet,pp_train,type="raw")
-mean(pred != pp_test$labels)
-mean(pred.in.sample != pp_train$labels)
+mean(pred != pp_test$condition)
+mean(pred.in.sample != pp_train$condition)
 
-cMatrixNnet=confusionMatrix(pred,pp_test$labels)
+cMatrixNnet=confusionMatrix(pred,pp_test$condition)
 #cMatrix=confusionMatrix(mod_nnet)
 
 plt <- as.data.frame(cMatrixNnet$table)
