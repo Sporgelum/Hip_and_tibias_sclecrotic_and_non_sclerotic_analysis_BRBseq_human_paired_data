@@ -27,3 +27,4 @@ brbseq-nf-pipeline/results/AMP0211/count_matrix/*
 *.Ruserdata
 *.Rproj.user/
 *.md
+*.rds

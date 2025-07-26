@@ -7344,9 +7344,9 @@ mean(pred.in.sample != pp_train$condition)
 
 cMatrixXGB=confusionMatrix(pred,pp_test$condition)
 
-cMatrix$byClass
+#cMatrix$byClass
 
-confusionMatrix
+cMatrixXGB
 #cMatrix=confusionMatrix(xgb_train)
 
 plt <- as.data.frame(cMatrixXGB$table)
@@ -7365,7 +7365,7 @@ plot(roc_imp2,
 
 trcontrol <- trainControl(
   method = "cv",
-  number = 20,
+  number = 5,#changed to 5 from 20
   classProbs = TRUE)
 
 tune_grid <- expand.grid(
