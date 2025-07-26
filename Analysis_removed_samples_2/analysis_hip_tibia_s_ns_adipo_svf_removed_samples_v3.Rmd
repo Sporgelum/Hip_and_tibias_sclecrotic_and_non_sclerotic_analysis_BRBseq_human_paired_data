@@ -7361,46 +7361,50 @@ plot(roc_imp2,
      top=5,xlim=c(0,max(roc_imp2$importance)))
 
 
-####Neural network
+####Neural network 
+# TODO
+# 
+# trcontrol <- trainControl(
+#   method = "cv",
+#   number = 5,#changed to 5 from 20
+#   classProbs = TRUE)
+# 
+# tune_grid <- expand.grid(
+#   size = (1),#changed from 3:8 #number if hidden neurons
+#   #decay = c(0.01,0.1,0.2))
+#   decay = c(1,10))
+# 
+# set.seed(123)
+# mod_nnet = caret::train(condition~ .,
+#                         data=pp_train,
+#                         method = "nnet",
+#                         trControl = trcontrol,
+#                         tuneGrid = tune_grid,
+#                         trace = FALSE,
+#                         maxit = 500 )
+# plot(mod_nnet)
+# 
+# 
+# pred = predict(mod_nnet,pp_test,type="raw")
+# pred.in.sample = predict(mod_nnet,pp_train,type="raw")
+# mean(pred != pp_test$condition)
+# mean(pred.in.sample != pp_train$condition)
+# 
+# cMatrixNnet=confusionMatrix(pred,pp_test$condition)
+# #cMatrix=confusionMatrix(mod_nnet)
+# 
+# plt <- as.data.frame(cMatrixNnet$table)
+# ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
+#   geom_tile() + geom_text(aes(label=round(Freq))) +
+#   scale_fill_gradient(low="white", high="#009194") +
+#   labs(x = "Prediction",y = "Reference")
+# 
+# results=t(cbind(RndFrst=cMatrixRF$overall,Nnet=cMatrixNnet$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
+results=t(cbind(RndFrst=cMatrixRF$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
 
-trcontrol <- trainControl(
-  method = "cv",
-  number = 5,#changed to 5 from 20
-  classProbs = TRUE)
-
-tune_grid <- expand.grid(
-  size = (3:8),
-  decay = c(0.01,0.1,0.2))
-
-set.seed(123)
-mod_nnet = caret::train(condition~ .,
-                        data=pp_train,
-                        method = "nnet",
-                        trControl = trcontrol,
-                        tuneGrid = tune_grid,
-                        trace = FALSE)
-plot(mod_nnet)
 
 
-pred = predict(mod_nnet,pp_test,type="raw")
-pred.in.sample = predict(mod_nnet,pp_train,type="raw")
-mean(pred != pp_test$condition)
-mean(pred.in.sample != pp_train$condition)
-
-cMatrixNnet=confusionMatrix(pred,pp_test$condition)
-#cMatrix=confusionMatrix(mod_nnet)
-
-plt <- as.data.frame(cMatrixNnet$table)
-ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
-  geom_tile() + geom_text(aes(label=round(Freq))) +
-  scale_fill_gradient(low="white", high="#009194") +
-  labs(x = "Prediction",y = "Reference")
-
-results=t(cbind(RndFrst=cMatrixRF$overall,Nnet=cMatrixNnet$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
-
-
-
-pltNnet <- as.data.frame(cMatrixNnet$table)
+#pltNnet <- as.data.frame(cMatrixNnet$table)
 pltRF <- as.data.frame(cMatrixRF$table)
 pltRpart <- as.data.frame(cMatrixRpart$table)
 pltXGB <- as.data.frame(cMatrixXGB$table)
@@ -7408,10 +7412,7 @@ pltXGB <- as.data.frame(cMatrixXGB$table)
 
 
 
-a= ggplot(pltNnet, aes(Prediction,Reference, fill= Freq)) +
-  geom_tile() + geom_text(aes(label=round(Freq))) +
-  scale_fill_gradient(low="white", high="#009194") +
-  labs(x = "Prediction",y = "Reference", title = "Rpart")
+#a= ggplot(pltNnet, aes(Prediction,Reference, fill= Freq)) +  geom_tile() + geom_text(aes(label=round(Freq))) +  scale_fill_gradient(low="white", high="#009194") +  labs(x = "Prediction",y = "Reference", title = "Rpart")
 b=ggplot(pltRF, aes(Prediction,Reference, fill= Freq)) +
   geom_tile() + geom_text(aes(label=round(Freq))) +
   scale_fill_gradient(low="white", high="#009194") +
@@ -7426,18 +7427,5 @@ d=ggplot(pltXGB, aes(Prediction,Reference, fill= Freq)) +
   labs(x = "Prediction",y = "Reference", title = "NNet")
 
 
-grid.arrange(a,b,c,d)
+grid.arrange(b,c,d)
 ```
-
-
-```{r}
-library(caret)
-rf_pred_class <- predict(rf_model, test_data)
-confusionMatrix <- confusionMatrix(rf_pred_class, test_data$condition)
-fourfoldplot(confusionMatrix$table, color = c("#CC6666", "#99CC99"), conf.level = 0, margin = 1, main = "Confusion Matrix")
-
-```
-```{r}
-#Explore with more models... ELASTIC NET
-```
-
