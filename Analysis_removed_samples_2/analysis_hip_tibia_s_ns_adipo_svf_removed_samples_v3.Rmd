@@ -6372,7 +6372,7 @@ top_genes <- rownames(topF)
 # Subset your data
 selected_data_limma <- logcpm_all_filtered[top_genes, ]
 
-
+selected_data <- selected_data_limma
 
 ############################################
 # we use the top_genes from limma here !   #
@@ -6389,8 +6389,8 @@ selected_data_limma
 library(pheatmap)
 annotation_col <-  df |> dplyr::select(group)
 #pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,# old f statistic pheatmap
-pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
-
+#pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
+pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,
                    scale = "column",
                    fontsize = 10,              # Adjust font size for readability
                    fontsize_row = 8,           # Smaller row labels if needed
@@ -6522,194 +6522,6 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 
 
 ```
-```{r}
-# ================================================================
-# PRE-PROCESSING & FEATURE SELECTION (on training data ONLY)
-# ================================================================
-
-
-# ================================================================
-# TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
-# ================================================================
-
-# Identify all unique patients in your dataset
-all_patients <- unique(md_df_bone$sample_number[md_df_bone$sampleID %in% combined_data$sample_2])
-head(all_patients)
-
-set.seed(123)
-train_proportion <- 0.8
-n_train <- round(length(all_patients) * train_proportion)
-train_patients <- sample(all_patients, n_train)
-test_patients  <- setdiff(all_patients, train_patients)
-
-# Map patient IDs back to sample IDs
-training_samples <- md_df_bone$sampleID[md_df_bone$sample_number %in% train_patients]
-testing_samples  <- md_df_bone$sampleID[md_df_bone$sample_number %in% test_patients]
-
-# Subset combined_data into train/test
-train_data <- combined_data[combined_data$sample_2 %in% training_samples, ]
-test_data  <- combined_data[combined_data$sample_2 %in% testing_samples, ]
-
-# Drop rows with all NAs (if any)
-train_data_clean <- train_data[rowSums(is.na(train_data)) != ncol(train_data), ]
-test_data_clean  <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
-
-cat("Training samples:", nrow(train_data_clean), "\n")
-cat("Test samples:    ", nrow(test_data_clean),  "\n")
-cat("Training patients:", length(train_patients), "\n")
-cat("Test patients:    ", length(test_patients),  "\n")
-
-# ================================================================
-# VISUALIZATION 1: DATA OVERVIEW AND QUALITY CHECK
-# ================================================================
-
-# Plot 1: Sample distribution
-p1 <- ggplot(combined_data, aes(x = condition, fill = condition)) +
-  geom_bar(alpha = 0.7) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(title = "Sample Distribution by Condition",
-       x = "Condition", y = "Number of Samples") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-# Plot 2: Age distribution by condition
-p2 <- ggplot(combined_data, aes(x = condition, y = Age, fill = condition)) +
-  geom_boxplot(alpha = 0.7) +
-  geom_jitter(width = 0.2, alpha = 0.6) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(title = "Age Distribution by Condition",
-       x = "Condition", y = "Age") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-# Plot 3: BMI distribution by condition
-p3 <- ggplot(combined_data, aes(x = condition, y = BMI, fill = condition)) +
-  geom_boxplot(alpha = 0.7) +
-  geom_jitter(width = 0.2, alpha = 0.6) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(title = "BMI Distribution by Condition",
-       x = "Condition", y = "BMI") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-# Plot 4: Gender distribution
-p4 <- ggplot(combined_data, aes(x = condition, fill = Gender)) +
-  geom_bar(position = "dodge", alpha = 0.7) +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(title = "Gender Distribution by Condition",
-       x = "Condition", y = "Count") +
-  theme_minimal()
-
-grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
-
-# --- Ensure 'condition' is a factor with consistent levels ---
-# This is a critical step to prevent prediction errors later
-train_data_clean$condition <- factor(train_data_clean$condition)
-test_data_clean$condition  <- factor(test_data_clean$condition, levels = levels(train_data_clean$condition))
-
-# --- Define the grouping variable for CV ---
-# This uses the original, unfiltered training data to ensure all samples are accounted for
-groupids <- factor(gsub("_.*", "", train_data_clean$sample_2))
-
-
-
-
-# --- Safely identify predictor columns ---
-# We separate metadata/outcome from the gene predictors
-outcome_name <- "condition"
-all_cols <- names(train_data_clean)
-# Assuming metadata columns might be present, we explicitly name them to exclude them from feature selection
-# Adjust this list if you have other metadata columns
-#metadata_cols <- c("sample_2", "Age", "Gender", "BMI", "type", "tissue", "patientID")
-metadata_cols <- c("sample_2", "type", "tissue", "patientID","ID")
-# Predictors are columns that are NOT the outcome and NOT metadata
-predictor_names <- setdiff(all_cols, c(outcome_name, metadata_cols))
-
-
-# --- Apply nearZeroVar ONLY to the numeric predictors ---
-nzv <- nearZeroVar(train_data_clean[, predictor_names], saveMetrics = TRUE)
-drop_nzv_cols <- rownames(nzv)[nzv$nzv]
-
-if (length(drop_nzv_cols) > 0) {
-  cat("Removing", length(drop_nzv_cols), "near-zero variance predictors.\n")
-  # Update the list of predictors to use
-  predictor_names <- setdiff(predictor_names, drop_nzv_cols)
-} else {
-  cat("No near-zero variance predictors found to remove.\n")
-}
-
-
-# --- Create final, clean data frames for modeling ---
-# This ensures train/test sets have the exact same columns
-final_train_data <- train_data_clean[, c(outcome_name, predictor_names)]
-final_test_data  <- test_data_clean[,  c(outcome_name, predictor_names)]
-
-
-# ================================================================
-# RANDOM FOREST MODEL TRAINING with patient-wise CV
-# ================================================================
-
-# 2A. Define patient-wise CV folds
-# NOTE: If you still get an error that ROC metrics are missing, it's likely
-# because a fold has samples from only one class. The best fix is to
-# reduce 'k' (e.g., from 5 to 3), which makes each fold larger.
-set.seed(123) # for reproducible folds
-cv_folds <- groupKFold(groupids, k = 5) #️ TRY k = 3 IF THIS FAILS
-
-ctrl <- trainControl(
-  method          = "cv",
-  index           = cv_folds,
-  classProbs      = TRUE,
-  summaryFunction = twoClassSummary,
-  savePredictions = "final",
-  allowParallel   = TRUE # Recommended for speed
-)
-
-# 2B. Tuning grid
-p_final <- ncol(final_train_data) - 1
-grid <- expand.grid(
-  mtry          = floor(sqrt(p_final) * c(0.5, 1, 2)),
-  splitrule     = "gini",
-  min.node.size = c(1, 5, 10)
-)
-
-# 2C. Train with caret + ranger
-set.seed(456)
-rf_tuned <- train(
-  condition ~ .,
-  data      = final_train_data,
-  method    = "ranger",
-  metric    = "ROC",
-  trControl = ctrl,
-  tuneGrid  = grid,
-  num.trees = 1000,
-  importance = 'impurity' # Optional: to calculate variable importance (gini), need "accuracy" too use =permutation
-)
-
-print(rf_tuned)
-plot(rf_tuned)
-
-library(ggplot2)
-ggplot(rf_tuned) + theme_minimal()
-
-
-# ================================================================
-# MODEL EVALUATION
-# ================================================================
-# Predictions
-train_predictions <- predict(rf_tuned, final_train_data)
-test_predictions  <- predict(rf_tuned, final_test_data)
-
-# Confusion Matrices
-train_cm <- caret::confusionMatrix(train_predictions, final_train_data$condition)
-test_cm  <- caret::confusionMatrix(test_predictions,  final_test_data$condition)
-
-print("Training Set Performance:")
-print(train_cm)
-print("\nTest Set Performance:")
-print(test_cm)
-```
-
 
 # Train model
 ```{r}
@@ -6890,10 +6702,17 @@ p6 <- ggplot(test_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
   theme_minimal()
 
 grid.arrange(p5, p6, ncol = 2)
-```
+
+#==========================
+# Predict on test set
+# =========================
+pred_probs <- predict(rf_tuned, newdata = test_data_clean, type = "prob")
+roc_obj <- roc(response = test_data_clean$condition,
+               predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class
+
+plot.roc(roc_obj, col = "red", print.auc = TRUE)
 
 
-```{r}
 # ================================================================
 # VISUALIZATION 3: ROC CURVES AND AUC
 # ================================================================
@@ -6916,10 +6735,8 @@ if(ncol(train_probs) >= 2) {
   cat("Training AUC:", round(train_roc$auc, 3), "\n")
   cat("Test AUC:", round(test_roc$auc, 3), "\n")
 }
-```
 
 
-```{r}
 # ================================================================
 # VISUALIZATION 4: VARIABLE IMPORTANCE
 # ================================================================
@@ -7012,50 +6829,109 @@ grid.arrange(p7, p8, ncol = 1)
 
 # Plot importance using randomForest's built-in function
 #varImpPlot(rf_tuned, main = "Variable Importance Plot") --> not the same for caret
-```
 
 
-```{r}
 # ================================================================
 # VISUALIZATION 5: MODEL DIAGNOSTICS
 # ================================================================
+rf_tuned$finalModel$prediction.error #--> does not store like random forest all the ntrees errors..
 
-# Plot 9: Error Rate vs Number of Trees
-plot(rf_model, main = "Error Rate vs Number of Trees")
-legend("topright", legend = c("OOB", levels(train_data_clean$condition)), 
-       col = 1:(length(levels(train_data_clean$condition))+1), lty = 1)
+# # Plot 9: Error Rate vs Number of Trees
+# plot(rf_model, main = "Error Rate vs Number of Trees")
+# legend("topright", legend = c("OOB", levels(train_data_clean$condition)), 
+#        col = 1:(length(levels(train_data_clean$condition))+1), lty = 1)
+# 
+# # Plot 10: Out-of-Bag Error Rate
+# oob_error <- rf_model$err.rate[,1]
+# p10 <- data.frame(Trees = 1:length(oob_error), OOB_Error = oob_error) |>
+#   ggplot(aes(x = Trees, y = OOB_Error)) +
+#   geom_line(color = "red", size = 1) +
+#   labs(title = "Out-of-Bag Error Rate vs Number of Trees",
+#        x = "Number of Trees", y = "OOB Error Rate") +
+#   theme_minimal()
+# 
+# print(p10)
 
-# Plot 10: Out-of-Bag Error Rate
-oob_error <- rf_model$err.rate[,1]
-p10 <- data.frame(Trees = 1:length(oob_error), OOB_Error = oob_error) |>
-  ggplot(aes(x = Trees, y = OOB_Error)) +
-  geom_line(color = "red", size = 1) +
-  labs(title = "Out-of-Bag Error Rate vs Number of Trees",
+trees_to_try <- seq(100, 10000, by = 100)
+oob_errors <- sapply(trees_to_try, function(n_trees) {
+  model <- ranger::ranger(
+    condition ~ .,
+    data       = train_data_clean,
+    num.trees  = n_trees,
+    mtry       = rf_tuned$bestTune$mtry,
+    min.node.size = rf_tuned$bestTune$min.node.size,
+    importance = "impurity",
+    probability = FALSE,
+    oob.error = TRUE
+  )
+  model$prediction.error
+})
+
+# Plot it
+library(ggplot2)
+df <- data.frame(Trees = trees_to_try, OOB_Error = oob_errors)
+
+ggplot(df, aes(x = Trees, y = OOB_Error)) +
+  geom_line(color = "red", linewidth = 0.8) +
+  geom_point(size = 2) +
+  labs(title = "OOB Error Rate vs. Number of Trees",
        x = "Number of Trees", y = "OOB Error Rate") +
   theme_minimal()
 
-print(p10)
+
 
 # ================================================================
 # VISUALIZATION 6: MULTIDIMENSIONAL SCALING (MDS) PLOT
 # ================================================================
+
+#If the classes (e.g. sclerotic vs. non.sclerotic) separate nicely, the RF has learned a meaningful structure.
+# IF the classes overlap, it means the model is facing difficulties to separate it with the current features.
+
+# The ranger method does not support matrix...  need to rerun with "rf" and specify proximity=true
+# Re-train using method = "rf" and add proximity = TRUE
+# Note: This might be a bit slower than ranger
+set.seed(456)
+rf_tuned_prox <- train(
+  condition ~ .,
+  data      = final_train_data,
+  method    = "rf",          # Use the original 'randomForest' engine
+  metric    = "ROC",
+  trControl = ctrl,
+  # 'rf' only tunes mtry from your grid, so we specify it directly
+  tuneGrid  = expand.grid(.mtry = c(22, 44, 89)), 
+  num.trees = 1000,
+  proximity = TRUE,           #This is the key argument to add!
+)
+
+
+# Get the proximity matrix from the new model
+# The matrix is inside the 'finalModel' slot
+dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
+
+# We also need the predictions from this new model
+train_predictions <- predict(rf_tuned_prox, final_train_data)
+
+
 library(MASS)
 library(ggplot2)
 library(gridExtra)
 
 # MDS plot using proximity matrix, value of distances is more important than the "rank"  (better for interpretation)
-if (!is.null(rf_model$proximity)) {
-  dist_mat <- 1 - rf_model$proximity
+if (!is.null(rf_tuned_prox$finalModel$proximity)) {
+  dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
   
   # Classical MDS (metric)
-  mds_metric <- cmdscale(dist_mat, k = 2)
+  mds_metric <- cmdscale(dist_mat, k = 2,eig = TRUE) #calcualte the eigenvectors, which dimensions are more stretcehd and how does the goodness of the fit look.
   mds_metric_df <- data.frame(
-    MDS1 = mds_metric[, 1],
-    MDS2 = mds_metric[, 2],
+    MDS1 = mds_metric$points[, 1],
+    MDS2 = mds_metric$points[, 2],
     Condition = train_data_clean$condition,
     Predicted = train_predictions
   )
   
+  message(paste0("The goodness-of-fit (eigenvector pca-like) information caputed is: ", round(sum(mds_metric$GOF) / 2,digits = 3)*100,"%"))
+  message(paste0("If goodness-of-fit caputed is < 90%\n check that other eigenvectors, contain more information so the first two dimensions are not enouhg\n...INTERPRET with caution... as it can be highly distorted"))
+  message(paste0(" The remaining ",(100 - round(sum(mds_metric$GOF) / 2,digits = 3)*100),"% of the information is lost in the projection from high-dimensional space down to 2D"))
   # Non-metric MDS, rank of distances is more important than the actual values for the proximity 
   # Very useful when your distances are semantic, ordinal, or not reliable in scale (random forest values...) semantic
   # very useful for rf results visu
@@ -7103,17 +6979,19 @@ if (!is.null(rf_model$proximity)) {
   grid.arrange(p11, p12, p13, p14, ncol = 2)
 }
 
+
 # ================================================================
-# VISUALIZATION 7: GENE EXPRESSION HEATMAP
+# VISUALIZATION 7: GENE EXPRESSION HEATMAP GINI
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df$Gene[1:50]  # Top 50 most important genes
-valid_genes <- top_genes[top_genes %in% rownames(norm_counts)]
-heatmap_data <- norm_counts[valid_genes, ]
+top_genes <- importance_df_gini$Gene[1:50]  # Top 50 most important genes
+top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
+valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
+heatmap_data <- selected_data[valid_genes, ]
 
 # Prepare annotation data
-annotation_col <- as.data.frame(colnames(norm_counts))
+annotation_col <- as.data.frame(colnames(selected_data))
 colnames(annotation_col) <- "sample"
 annotation_col$sample_2 <- annotation_col$sample
 
@@ -7125,7 +7003,7 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::left_join(md_df_bone[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
   dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
@@ -7139,7 +7017,49 @@ pheatmap(
   clustering_distance_cols = "correlation",
   show_rownames = TRUE,
   show_colnames = FALSE,
-  main = "Heatmap of Top 50 Most Important Genes",
+  main = "Heatmap of Top 50 Most GINI Important Genes",
+  fontsize_row = 6,
+  color = colorRampPalette(c("blue", "white", "red"))(100)
+)
+
+# ================================================================
+# VISUALIZATION 7.2: GENE EXPRESSION HEATMAP Accuracy
+# ================================================================
+
+# Create heatmap of top important genes
+top_genes <- importance_df_accuracy$Gene[1:50]  # Top 50 most important genes
+top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
+valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
+heatmap_data <- selected_data[valid_genes, ]
+
+# Prepare annotation data
+annotation_col <- as.data.frame(colnames(selected_data))
+colnames(annotation_col) <- "sample"
+annotation_col$sample_2 <- annotation_col$sample
+
+# Split sample names
+annotation_col <- annotation_col |> 
+  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
+
+# safety colname 
+#annotation_col_rownames_safety_check <- annotation_col$sample_2
+# Add metadata (BMI, Age, Gender)
+heatmap_annotation <- annotation_col |> 
+  dplyr::left_join(md_df_bone[,c("sampleID","Age","Gender","BMI")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
+
+rownames(heatmap_annotation) <- colnames(heatmap_data)
+
+# Create heatmap
+pheatmap(
+  heatmap_data,
+  annotation_col = heatmap_annotation,
+  scale = "row",
+  clustering_distance_rows = "correlation",
+  clustering_distance_cols = "correlation",
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "Heatmap of Top 50 Most Accuracy Important Genes",
   fontsize_row = 6,
   color = colorRampPalette(c("blue", "white", "red"))(100)
 )
@@ -7148,14 +7068,49 @@ pheatmap(
 # VISUALIZATION 8: PARTIAL DEPENDENCE PLOTS
 # ================================================================
 
-# Partial dependence plots for top 6 genes
-top_6_genes <- importance_df$Gene[1:6]
+# # Partial dependence plots for top 6 genes
+# top_6_genes <- importance_df_gini$Gene[1:6]
+# 
+# par(mfrow = c(2, 3))
+# for(gene in top_6_genes) {
+#   partialPlot(rf_model, train_data_clean, x.var = paste0(gene), main = paste("Partial Dependence:", gene))
+# }
+# par(mfrow = c(1, 1))
+# Install the pdp package if you haven't already
+# install.packages("pdp")
+library(pdp)
+library(gridExtra)
 
-par(mfrow = c(2, 3))
-for(gene in top_6_genes) {
-  partialPlot(rf_model, train_data_clean, x.var = paste0(gene), main = paste("Partial Dependence:", gene))
+# 1. Get the names of your top 6 genes from the importance data frame
+# (Assuming your importance data frame is named 'importance_df')
+top_6_genes <- importance_df_gini %>%
+  dplyr::arrange(desc(MeanDecreaseGini)) %>%
+  dplyr::slice_head(n = 6) %>%
+  dplyr::pull(Gene)
+
+# 2. Create and store a PDP for each top gene
+pdp_plots <- list()
+for (gene in top_6_genes) {
+  # The pdp::partial function calculates the dependence
+  p <- pdp::partial(
+    rf_tuned,                      # Your caret model object
+    pred.var = gene,               # The feature (gene) to plot
+    train = final_train_data,      # The training data used
+    prob = TRUE,                   # Set to TRUE for classification probability
+    which.class = "sclerotic"      # Specify the class of interest
+  ) |> 
+  
+  # The pdp::autoplot function creates the ggplot visualization
+  autoplot() +
+  ggtitle(paste("Partial Plot for", gene)) +
+  ylab("P(sclerotic)") +
+  theme_minimal()
+  
+  pdp_plots[[gene]] <- p
 }
-par(mfrow = c(1, 1))
+
+# 3. Arrange all the plots in a 2x3 grid
+grid.arrange(grobs = pdp_plots, ncol = 3)
 
 # ================================================================
 # COMPREHENSIVE MODEL SUMMARY AND INTERPRETATION
@@ -7176,9 +7131,10 @@ cat("- Class distribution (overall):", table(combined_data$condition), "\n")
 
 cat("\n2. MODEL CONFIGURATION:\n")
 cat("\n", paste(rep("-", 50), collapse = ""), "\n")
-cat("- Number of trees:", rf_model$ntree, "\n")
-cat("- Features per split (mtry):", rf_model$mtry, "\n")
-cat("- OOB Error Rate:", round(rf_model$err.rate[rf_model$ntree, 1] * 100, 2), "%\n")
+cat("- Number of trees:", rf_tuned$finalModel$num.trees, "\n")
+cat("- Features per split (mtry):", rf_tuned$bestTune$mtry, "\n")
+cat("- OOB Error Rate:", round(rf_tuned$finalModel$prediction.error* 100, 2), "%\n")
+#here we also have the errors used for up to 10000 trees splitted by 100... from 1000 to 10000
 
 cat("\n3. PERFORMANCE METRICS:\n")
 cat("\n", paste(rep("-", 50), collapse = ""), "\n")
@@ -7199,8 +7155,8 @@ cat("\n", paste(rep("-", 50), collapse = ""), "\n")
 for(i in 1:10) {
   cat(sprintf("%2d. %s (MDA: %.4f, MDG: %.4f)\n", 
               i, importance_df$Gene[i], 
-              importance_df$MeanDecreaseAccuracy[i],
-              importance_df$MeanDecreaseGini[i]))
+              importance_df_accuracy$MeanDecreaseAccuracy[i],
+              importance_df_gini$MeanDecreaseGini[i]))
 }
 
 cat("\n5. MODEL INTERPRETATION:\n")
@@ -7210,7 +7166,7 @@ cat("- The Random Forest model shows",
            ifelse(test_cm$overall['Accuracy'] > 0.7, "good", "moderate")), 
     "predictive performance\n")
 
-cat("- OOB error of", round(rf_model$err.rate[rf_model$ntree, 1] * 100, 2), 
+cat("- OOB error of", round(rf_tuned$finalModel$prediction.error * 100, 2), 
     "% indicates", 
     ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.1, "excellent", 
            ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.2, "good", "moderate")),
@@ -7225,70 +7181,9 @@ if(exists("test_roc")) {
 
 cat("- The top important genes likely represent key biomarkers\n")
 cat("  distinguishing sclerotic from non-sclerotic conditions\n")
-
-cat("\n6. BIOLOGICAL INTERPRETATION:\n")
-cat("\n", paste(rep("-", 50), collapse = ""), "\n")
-cat("- Gene expression patterns successfully differentiate conditions\n")
-cat("- Important genes may be involved in:\n")
-# cat("  * Bone remodeling and sclerosis pathways\n")
-# cat("  * Inflammatory responses\n")
-# cat("  * Extracellular matrix regulation\n")
-# cat("  * Adipocyte differentiation and function\n")
-# Add enrichR results top 3 pathwas gobp, kegg and reactome.
-# Perform enrichR
-#install.packages("enrichR")
 ```
 
 
-```{r}
-library(enrichR)
-websiteLive <- getOption("enrichR.live")
-if (websiteLive) {
-    listEnrichrSites()
-    setEnrichrSite("Enrichr") # Human genes   
-}
-if (websiteLive) dbs <- listEnrichrDbs()
-#dbs <- listEnrichrDbs()
-dbs
-
-#pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
-hip_adipocytes_sclerotic_vs_non_sclerotic$results$table |> dplyr::filter(FDR < 0.05)
-
-
-message(paste0("Working on sample: ",hip_adipocytes_sclerotic_vs_non_sclerotic$name))
-
-dbs <- c('GO_Cellular_Component_2017','GO_Molecular_Function_2017','GO_Biological_Process_2017','CellMarker_2024')
-enriched <- enrichr(genes = c(hip_adipocytes_sclerotic_vs_non_sclerotic$results$table |> dplyr::filter(FDR < 0.05) |> 
-                      #dplyr::filter(!grepl(x = genes,pattern = "^Gm\\d+")) |>
-                      #dplyr::filter(!grepl(x = genes,pattern = "*Rik$")) |> 
-                      dplyr::filter(!is.na(genes)) |> 
-                      dplyr::filter(genes != "") |>
-                      dplyr::filter(!grepl(x = genes, pattern = "ENSG")) |>
-                      dplyr::pull(genes)), databases = dbs)
-
-enriched
-
-enriched[["CellMarker_2024"]]
-# plot the enrichment 3 from dbs GOBP
-
-#enriched
-#enriched$CellMarker_2024
-write.table(enriched[["CellMarker_2024"]],file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/hip_patient/HSA_vs_HNSA_enriched_papers_enrichR.csv",
-            sep = ",",row.names = FALSE,col.names = TRUE)
-plotEnrich(enriched[[4]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
-
-
-
-cat("\n7. RECOMMENDATIONS:\n")
-cat("\n", paste(rep("-", 50), collapse = ""), "\n")
-cat("- Validate top biomarker genes in independent cohorts\n")
-cat("- Investigate biological pathways of important genes\n")
-cat("- Consider ensemble methods for improved performance\n")
-cat("- Perform functional enrichment analysis of top genes\n")
-
-cat("\n", paste(rep("=", 80), collapse = ""), "\n")
-
-```
 
 # Use data
 ```{r}
