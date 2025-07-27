@@ -6304,6 +6304,7 @@ oarsi_data_scores
 ```
 
 # Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
+# GO RUN LINE "1660" to get all the samples normalized together.
 ```{r,fig.width=16,fig.height=55}
 # Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
 # run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
@@ -6350,9 +6351,17 @@ if (length(unique(df$group)) < 2) return(NA)
 
 # Implement limma approach, and get a model for both conditions and extract the gene-trend and ranking of genes which suffies for Random forest.
 design <- model.matrix(~ 0 + patient + group,data = df)
+#design <- model.matrix(~ 0 + group,data = df)
 #colnames(design) <- levels(df$group)# working if only one..
+# or add correlation to see if genes are a little more different.... to use for prediction..
+#block <- df$patient
+#dupcor <- duplicateCorrelation(logcpm_all_filtered,design,block=block)
+
+
 colnames(design) 
+#fit <- lmFit(logcpm_all_filtered,block = block,correlation = dupcor$consensus, design)
 fit <- lmFit(logcpm_all_filtered, design)
+
 #contrast <- makeContrasts(ScleroticVsNon = sclerotic - non.sclerotic,levels = design) # this i can use if i have more levels that i would be interested scuh as B-C, B-D, but if i just do B - A (sclerotic(level B) - non.sclerotic(level A)) no need 
 #fit2 <- contrasts.fit(fit, contrast)
 res <- eBayes(fit)
@@ -7212,8 +7221,9 @@ heatmap(cor_mat)
 ```
 
 
-# Use data
+# Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
 ```{r}
+
 
 ```
 
@@ -7598,8 +7608,32 @@ ggplot(pp_test_ranked, aes(x = confidence_rank, y = neighbor_correlation, color 
   theme_minimal()
 
 
+#===========================
+# BONUS 4: explore what does the model learn from using UMAP on the PCA space samples... as we can not directly get the embedding and see what did thet model learnt as in keras or tensor...
+#==========================
+#FUTURE TODO --> use keras or tensorflow.
 
+# visu what does the model learn from the PCA space.
+library(umap)
 
+# UMAP on training PCA input
+umap_result <- umap(pp_train_reduced[, paste0("PC", 1:30)])
+umap_df <- as.data.frame(umap_result$layout)
+umap_df$condition <- pp_train_reduced$condition
+umap_df$Age <- pp_train_reduced$Age
+umap_df$Gender <- pp_train_reduced$Gender
+umap_df$oarsi <- pp_train_reduced$oarsi_score
+umap_df$BMI <- pp_train_reduced$BMI
+
+# Plot
+for (colorin in c("condition","Age","Gender","BMI","oarsi")){
+  p<- ggplot(umap_df, aes_string(x = "V1", y = "V2", color = colorin,shape="condition")) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(title = "UMAP of PCA-Reduced Input Space (as seen by nnet)",
+       x = "UMAP 1", y = "UMAP 2") +
+  theme_minimal()
+  print(p)
+}
 
 ##===============================
 #VISU RESULTS of all methdos
