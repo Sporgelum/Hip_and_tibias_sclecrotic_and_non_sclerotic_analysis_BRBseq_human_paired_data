@@ -7312,8 +7312,9 @@ roc_imp2 <- varImp(rf_train,
 plot(roc_imp2,
      top=5,xlim=c(0,max(roc_imp2$importance)))
 
-
+#===================
 ##XGboost
+#==================
 tunegrid <- expand.grid(nrounds = seq(1,100,by=20),
                         max_depth = c(1,5,10),
                         eta = seq(0.01,0.5,length.out = 5),
@@ -7361,8 +7362,9 @@ roc_imp2 <- varImp(xgb_train,
 plot(roc_imp2,
      top=5,xlim=c(0,max(roc_imp2$importance)))
 
-
+#========================
 ####Neural network 
+#=======================
 library(caret)
 library(nnet)
 library(dplyr)
@@ -7432,40 +7434,45 @@ mod_nnet <- train(
   trace = FALSE,
   maxit = 500
 )
-
+plot(mod_nnet)
 # Step 6: Review model results
 print(mod_nnet)
  
 #============================================
 # Predic using the test data.
 #===========================================
-# Note: You can include all predictors except the target 'condition'
-dummies <- dummyVars(~ ., data = pp_test  |>  dplyr::select(-condition))
-pp_test_encoded <- predict(dummies, newdata = pp_test) |> as.data.frame()
+# # Note: You can include all predictors except the target 'condition'
+# dummies <- dummyVars(~ ., data = pp_test  |>  dplyr::select(-condition))
+# pp_test_encoded <- predict(dummies, newdata = pp_test) |> as.data.frame()
+# 
+# # Step 2: Add target back
+# pp_test_encoded$condition <- factor(pp_test$condition)
+# 
+# # Step 3: PCA on numeric predictors
+# preproc <- preProcess(
+#   pp_test_encoded[, setdiff(names(pp_test_encoded), "condition")],
+#   method = "pca",
+#   pcaComp = 50  # Tune this number based on explained variance or performance
 
-# Step 2: Add target back
-pp_test_encoded$condition <- factor(pp_test$condition)
+# ) --> thsi will calculate new PCA space... need to use the same PCA space!!!!!!!!!!!!!!!!!!!!!!
 
-# Step 3: PCA on numeric predictors
-preproc <- preProcess(
-  pp_test_encoded[, setdiff(names(pp_test_encoded), "condition")],
-  method = "pca",
-  pcaComp = 50  # Tune this number based on explained variance or performance
-)
-
-# Step 2: Apply same PCA transformation
+# USE THE SAME PCA SPACE AS TRAINING DATASET!!
+pp_test_encoded <- predict(dummies, newdata = pp_test  |> dplyr::select(-condition)) |> as.data.frame()
 pp_test_reduced <- predict(preproc, pp_test_encoded)
-
-# Step 3: Add condition back (optional — only if you want to evaluate performance)
 pp_test_reduced$condition <- factor(pp_test$condition)
 
+#=======================================================
 # Step 4: Predict using trained model
-preds <- predict(mod_nnet, newdata = pp_test_reduced)
+preds <- predict(mod_nnet, newdata = pp_test_reduced) 
+#=======================================================
 
 # Step 5: Evaluate performance
 confusionMatrix(preds, pp_test_reduced$condition)
 
 
+#===========================
+#### Extra evaluation
+#===========================
 pred = predict(mod_nnet,pp_test_reduced,type="raw")
 pred.in.sample = predict(mod_nnet,pp_train_reduced,type="raw")
 mean(pred != pp_test_reduced$condition)
@@ -7479,7 +7486,124 @@ ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
   geom_tile() + geom_text(aes(label=round(Freq))) +
   scale_fill_gradient(low="white", high="#009194") +
   labs(x = "Prediction",y = "Reference")
-# 
+#=========================
+# visualize test samples in the PCA training space =), same idea as carmona paper and then calculate distance of genes in single cell of correlate cells..!!
+#=====================================================
+pp_test_reduced$dataset <- "Test"
+pp_test_reduced$Age <- pp_test$Age
+pp_test_reduced$Gender <- pp_test$Gender
+pp_test_reduced$BMI <- pp_test$BMI
+pp_test_reduced$oarsi_score <- pp_test$oarsi_score
+
+
+# Add dataset label to training data
+pp_train_reduced$dataset <- "Train"
+pp_train_reduced$Age <- pp_train$Age
+pp_train_reduced$Gender <- pp_train$Gender
+pp_train_reduced$BMI <- pp_train$BMI
+pp_train_reduced$oarsi_score <- pp_train$oarsi_score
+
+
+# Combine
+combined_pca <- rbind(pp_train_reduced[, c("PC1", "PC2", "condition", "dataset","Age","Gender","BMI","oarsi_score")],
+                      pp_test_reduced[, c("PC1", "PC2", "condition",  "dataset","Age","Gender","BMI","oarsi_score")])
+
+# Plot
+plots_combined_pca_space <-list()
+for( colorin in c("condition","dataset","Age","Gender","BMI","oarsi_score")){
+  
+  p <- ggplot(combined_pca, aes_string(x = "PC1", y = "PC2", color = colorin, shape = "dataset")) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(title = paste("PCA Projection Colored by", colorin),
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal()
+  plots_combined_pca_space[[paste0("Element_", colorin)]] <- p
+  
+}
+plots_combined_pca_space
+
+#==================================
+# BONUS 2, correlation of test samples closer to training samples in PCA space
+#===============================================================================
+# Set number of principal components to use
+pca_cols <- paste0("PC", 1:30)  # or whatever number you used
+
+# Extract PCA-reduced features
+train_pca <- pp_train_reduced[, pca_cols]
+test_pca <- pp_test_reduced[, pca_cols]
+
+# Gene columns (exclude demographic & condition columns if needed)
+gene_cols <- setdiff(names(pp_train_encoded), c("Age", "BMI", "GenderMale", "GenderFemale", "condition"))
+
+# Original gene expression matrices
+train_genes <- pp_train_encoded[, gene_cols]
+test_genes <- pp_test_encoded[, gene_cols]
+
+# Step 1: Compute distance matrix in PCA space
+distance_matrix <- as.matrix(dist(rbind(test_pca, train_pca)))
+n_test <- nrow(test_pca)
+distances_only <- distance_matrix[1:n_test, (n_test + 1):nrow(distance_matrix)]
+
+# Step 2: For each test sample, find closest N train samples
+closest_n <- 3  # you can adjust this
+correlation_scores <- numeric(n_test)
+
+for (i in 1:n_test) {
+  # Find N nearest training indices
+  neighbors <- order(distances_only[i, ])[1:closest_n]
+
+  # Average training neighbors' gene expression
+  avg_train_genes <- colMeans(train_genes[neighbors, ])
+
+  # Correlate test sample's genes with averaged neighbors, take care that this is a vector, is what cor, wants!
+  correlation_scores[i] <- cor(as.numeric(test_genes[i, ]), as.numeric(avg_train_genes), method = "pearson")
+}
+
+# Step 3: Attach results to test data
+pp_test_reduced$neighbor_correlation <- correlation_scores
+pp_test_reduced$samplename <- test_data$sample_2
+
+#Visualize
+ggplot(pp_test_reduced, aes(x = neighbor_correlation, fill = condition)) +
+  geom_histogram(position = "identity", bins = 30, alpha = 0.6) +
+ # geom_point()+
+  labs(title = "Gene Expression Similarity to PCA-Nearest Neighbors",
+       x = "Pearson Correlation",
+       y = "Test Sample Count") +
+#  geom_text(aes(label=condition)) +
+  theme_minimal()
+
+
+#========================================================
+# Bonus 3: rank test samples similarity to training samples on ocrrelation score.
+#===========================================================
+# Rank test samples by correlation score
+pp_test_reduced$confidence_rank <- rank(-pp_test_reduced$neighbor_correlation, ties.method = "first")
+
+# Sort the test data by confidence
+pp_test_ranked <- pp_test_reduced[order(-pp_test_reduced$neighbor_correlation), ]
+
+# Optional: View top N most confident samples
+top_n <- 10
+head(pp_test_ranked[, c("confidence_rank", "neighbor_correlation", "condition","samplename")], top_n)
+
+# Visualize ranking distribution
+ggplot(pp_test_ranked, aes(x = confidence_rank, y = neighbor_correlation, color = condition)) +
+  geom_point(alpha = 0.8) +
+  labs(title = "Confidence Ranking of Test Samples",
+       x = "Confidence Rank (1 = Most Confident)",
+       y = "Correlation with PCA-Nearest Training Neighbors") +
+  geom_text(aes(label=samplename),size=3,color="black",check_overlap = TRUE,position = position_jitter()) +
+  theme_minimal()
+
+
+
+
+
+##===============================
+#VISU RESULTS of all methdos
+##===============================
 results=t(cbind(RndFrst=cMatrixRF$overall,Nnet=cMatrixNnet$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
 #results=t(cbind(RndFrst=cMatrixRF$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
 
