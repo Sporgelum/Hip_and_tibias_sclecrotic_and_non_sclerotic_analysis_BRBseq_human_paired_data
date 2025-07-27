@@ -6556,6 +6556,50 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 
 # Train model
 ```{r}
+unloadNamespace("caret")
+unloadNamespace("recipes")
+unloadNamespace("ipred")
+unloadNamespace("prodlim")
+unloadNamespace("lava")
+unloadNamespace("survival")
+unloadNamespace("genefilter")
+unloadNamespace("ranger")
+unloadNamespace("Matrix")
+unloadNamespace("nlme")
+
+unloadNamespace("edgeR")
+unloadNamespace("locfit")
+unloadNamespace("pdp")
+
+unloadNamespace("lattice")
+
+# unloadNamespace("caret")
+# unloadNamespace("VIM")
+# unloadNamespace("sp")
+# 
+# 
+# 
+# unloadNamespace("zoo")
+# unloadNamespace("lmtest")
+# unloadNamespace("vcd")
+# unloadNamespace("SummarizedExperiment")
+# unloadNamespace("DelayedArray")
+# unloadNamespace("ranger")
+# unloadNamespace("uwot")
+# unloadNamespace("caret")
+# unloadNamespace("DESeq2")
+# 
+# unloadNamespace("lattice")
+# unloadNamespace("lattice")
+```
+
+```{r}
+library(caret)
+```
+# Rerun after checking stabilization of oob errors --> with at least 7000 trees.
+# TODO here
+# check again top genes!
+```{r}
 # ================================================================
 # TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
 # ================================================================
@@ -6779,6 +6823,10 @@ if(ncol(train_probs) >= 2) {
 }
 
 
+
+
+
+
 # ================================================================
 # VISUALIZATION 4: VARIABLE IMPORTANCE
 # ================================================================
@@ -6836,7 +6884,7 @@ plot(importance_scores_gini, top = 20)
 set.seed(456)
 rf_tuned_accuracy <- train(
   condition ~ .,
-  data      = final_train_data,
+  data      = train_data_clean,
   method    = "ranger",
   metric    = "ROC",
   trControl = ctrl,
@@ -6920,8 +6968,6 @@ ggplot(df, aes(x = Trees, y = OOB_Error)) +
        x = "Number of Trees", y = "OOB Error Rate") +
   theme_minimal()
 
-
-
 # ================================================================
 # VISUALIZATION 6: MULTIDIMENSIONAL SCALING (MDS) PLOT
 # ================================================================
@@ -6935,7 +6981,7 @@ ggplot(df, aes(x = Trees, y = OOB_Error)) +
 set.seed(456)
 rf_tuned_prox <- train(
   condition ~ .,
-  data      = final_train_data,
+  data      = train_data_clean,
   method    = "rf",          # Use the original 'randomForest' engine
   metric    = "ROC",
   trControl = ctrl,
@@ -6951,7 +6997,7 @@ rf_tuned_prox <- train(
 dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
 
 # We also need the predictions from this new model
-train_predictions <- predict(rf_tuned_prox, final_train_data)
+train_predictions <- predict(rf_tuned_prox, train_data_clean)
 
 
 library(MASS)
@@ -7027,7 +7073,8 @@ if (!is.null(rf_tuned_prox$finalModel$proximity)) {
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_gini$Gene[1:50]  # Top 50 most important genes
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)  # Top 50 most important genes
+message(paste0("Top50 Gini features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -7069,7 +7116,8 @@ pheatmap(
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_accuracy$Gene[1:50]  # Top 50 most important genes
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)# Top 50 most important genes
+message(paste0("Top50 Accuracy features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -7106,6 +7154,7 @@ pheatmap(
   color = colorRampPalette(c("blue", "white", "red"))(100)
 )
 
+message("they both include oarsi score 6, if sample was very damaged")
 # ================================================================
 # VISUALIZATION 8: PARTIAL DEPENDENCE PLOTS
 # ================================================================
@@ -7137,7 +7186,7 @@ for (gene in top_6_genes) {
   p <- pdp::partial(
     rf_tuned,                      # Your caret model object
     pred.var = gene,               # The feature (gene) to plot
-    train = final_train_data,      # The training data used
+    train = train_data_clean,      # The training data used
     prob = TRUE,                   # Set to TRUE for classification probability
     which.class = "sclerotic"      # Specify the class of interest
   ) |> 
