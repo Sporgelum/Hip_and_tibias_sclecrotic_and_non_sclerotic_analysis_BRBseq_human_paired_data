@@ -243,8 +243,8 @@ TTM_samples <- function(matrix_of_counts,metadata,gene_info){
 
 ```{r, fig.height=5,fig.width=9}
 tmm_hip_counts <- TTM_samples(matrix_of_counts = matrix_counts_hip[,3:ncol(matrix_counts_hip)],metadata = md_df |>
-                                filter(tissue=="Hip") |>
-                                select(health_status,full_name,sampleID,barcode,tissue,health_status,
+                                dplyr::filter(tissue=="Hip") |>
+                                dplyr::select(health_status,full_name,sampleID,barcode,tissue,health_status,
                                        tissue_celltype,tissue_celltype_lowercase,'Plate ID',Row.y,Column.y,Species.y,'Tissue/cell type',Age,Gender,BMI),
                               gene_info = matrix_counts_hip$Gene_name)
 
@@ -263,8 +263,8 @@ abline(h = 170000, col = "red");
 
 ```{r, fig.height=5,fig.width=9}
 tmm_tibia_counts <- TTM_samples(matrix_of_counts = matrix_counts_tibia[,3:ncol(matrix_counts_tibia)],metadata = md_df |>
-                                filter(tissue=="tibia") |>
-                                select(health_status,full_name,sampleID,barcode,tissue,health_status,
+                                dplyr::filter(tissue=="tibia") |>
+                                dplyr::select(health_status,full_name,sampleID,barcode,tissue,health_status,
                                        tissue_celltype,tissue_celltype_lowercase,'Plate ID',Row.y,Column.y,Species.y,'Tissue/cell type',Age,Gender,BMI),
                               gene_info = matrix_counts_tibia$Gene_name)
 
@@ -283,35 +283,9 @@ abline(h = 150000, col = "red");
 ```
 
 
-
-# Orientation of Data
-## Transposed Data (samples as rows, genes as columns)
-
-m <- prcomp(t(matrix_counts_hip[,3:ncol(matrix_counts_hip)]), scale. = TRUE, center = TRUE)
-Input Matrix: After transposing, each row represents a sample, and each column represents a gene.
-Interpretation: PCA will identify principal components based on the variance among samples across different genes.
-Results: The principal components will describe the variation between the samples. Each principal component (PC) is a linear combination of the gene expression values.
-
-
-## Non-Transposed Data (genes as rows, samples as columns)
-
-m <- prcomp(matrix_counts_hip[,3:ncol(matrix_counts_hip)], scale. = TRUE, center = TRUE)
-Input Matrix: Without transposing, each row represents a gene, and each column represents a sample.
-Interpretation: PCA will identify principal components based on the variance among genes across different samples.
-Results: The principal components will describe the variation between the genes. Each principal component (PC) is a linear combination of the sample values.
-
-
-# Choosing the Right Approach
-The choice of whether to transpose the data or not depends on what you want to analyze:
-
-## Analyzing Variation Between Samples: If your goal is to analyze how samples (conditions) vary based on gene expression profiles, you should transpose the data so that each row represents a sample. This will provide principal components that describe the differences between samples.
-m <- prcomp(t(matrix_counts_hip[,3:ncol(matrix_counts_hip)]), scale. = TRUE, center = TRUE)
-
-
-## Analyzing Variation Between Genes: If your goal is to analyze how genes vary across different samples, you should not transpose the data, keeping genes as rows and samples as columns. This will provide principal components that describe the differences between genes.
-m <- prcomp(matrix_counts_hip[,3:ncol(matrix_counts_hip)], scale. = TRUE, center = TRUE)
-
-
+#======================================
+#samples as rows, genes as features!
+#=====================================
 
 # Clean rows that have gene expression for all the samples < 3 counts.
 ```{r}
@@ -334,8 +308,9 @@ dim(matrix_counts_tibia[,3:ncol(matrix_counts_tibia)][rowSums(matrix_counts_tibi
 
 
 #Function for PCA, removing empty genes counts and empty columns if trnasposed and clean duplicated
+#Samples shall be explaiined by the features (columns)
 ```{r}
-run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, filter_empty_samples_counts = 30) {
+run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = TRUE, filter_empty_samples_counts = 30) {
   # Check input
   if (!is.data.frame(matrix_data) && !is.matrix(matrix_data)) {
     stop("matrix_data must be a data frame or matrix.")
@@ -360,15 +335,18 @@ run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, fi
     stop("PCA input must be numeric.")
   }
   
-  # Run PCA based on transpose parameter
+  # Run PCA based on transpose parameter (samples x genes (features are genes!!!!))
   if (transpose) {
     # Samples as rows, genes as columns
     if (ncol(data_matrix_filtered) < 2 || nrow(data_matrix_filtered) < 2) {
       stop("Not enough data points for PCA after transpose.")
     }
     m <- prcomp(t(data_matrix_filtered), scale. = TRUE, center = TRUE)
-    # For transpose=TRUE, rotation contains sample loadings
-    m_df <- as.data.frame(m$rotation)
+    message("Samples as rows, and genes as features!")
+    # For transpose=TRUE, rotation contains gene loadings!!!!
+    m_df_loadings <- as.data.frame(m$rotation)
+    m_df <- as.data.frame(m$x)
+    
   } else {
     # Genes as rows, samples as columns  
     if (nrow(data_matrix_filtered) < 2 || ncol(data_matrix_filtered) < 2) {
@@ -376,7 +354,8 @@ run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, fi
     }
     m <- prcomp(data_matrix_filtered, scale. = TRUE, center = TRUE)
     # For transpose=FALSE, x contains sample scores
-    m_df <- as.data.frame(m$rotation)
+    m_df_loadings <- as.data.frame(m$rotation)
+    m_df <- as.data.frame(m$x)
   }
   
   m_df$sample_id <- rownames(m_df)
@@ -384,9 +363,9 @@ run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, fi
   # Merge with metadata if provide and the data matrix was transposed else do not merge
   #  if (transpose && !is.null(md_df)) {
   if (transpose) {
-    m_merged <- m_df
-  } else {
     m_merged <- merge(x = m_df, y = md_df, by.x = "sample_id", by.y = "full_name", all.x = TRUE)
+  } else {
+    m_merged <- m_df#merge(x = m_df, y = md_df, by.x = "sample_id", by.y = "full_name", all.x = TRUE)
   }
   
   # Calculate variance explained
@@ -395,6 +374,7 @@ run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, fi
   return(list(
     matrix_raw = data_matrix_filtered,
     matrix_pca = m_merged,
+    matrix_pca_loadings = m_df_loadings,
     percentVar_obj = percent_var
   ))
 }
@@ -405,24 +385,12 @@ run_pca_structuring <- function(matrix_data, md_df = NULL, transpose = FALSE, fi
 ```{r}
 #Genes variability, typically biology difference across samples is stronger.. so it is also difficult to catch...
 #Genes variability, typically biology difference across samples is stronger.. so it is also difficult to catch...
-m_pca_tibia <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
-m_pca_hip <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_tibia <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df) # if samples are not on rows --> transpose =TRUE
+m_pca_hip <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
 
 
 ```
 
-### If this crash, make sure that the matrix is a matrix.
-```{r}
-# # If the list is a list of equal-length numeric vectors:
-# data_matrix_fixed <- as.data.frame(data_matrix_filtered)
-# 
-# # Or try to coerce directly to a matrix:
-# data_matrix_fixed <- as.matrix(data_matrix_filtered)
-# 
-# str(data_matrix_filtered)
-# is.matrix(data_matrix_filtered)
-
-```
 
 
 # Plot the PCA function
@@ -563,8 +531,8 @@ plot_the_pca(pca_df = m_pca_hip$matrix_pca,
 
 
 ```{r}
-m_pca_tibia_t <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
-m_pca_hip_t <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_tibia_t <- run_pca_structuring(matrix_data = matrix_counts_tibia,transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_hip_t <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
 
 
 ```
@@ -572,6 +540,7 @@ m_pca_hip_t <- run_pca_structuring(matrix_data = matrix_counts_hip,transpose = T
 # Tibia
 ```{r,fig.width=6,fig.height=3}
 ### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# here we see which are the most important genes for a few samples...
 plot_the_pca(pca_df = m_pca_tibia_t$matrix_pca,
              color_var=NULL,shape_var=NULL,
              pc_x = "PC1",pc_y = "PC2",
@@ -584,6 +553,7 @@ plot_the_pca(pca_df = m_pca_tibia_t$matrix_pca,
 # Hip
 ```{r,fig.width=6,fig.height=3}
 ### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
+# here we see which are the most important genes for a few samples...
 plot_the_pca(pca_df = m_pca_hip_t$matrix_pca,
              color_var =  NULL,shape_var = NULL
              ,pc_x = "PC1",pc_y = "PC2",title="PCA of Transposed RNA-seq Raw Data",subtitle = "Hips SVF and Adipocyte Transposed",text_var = "sample_number",
@@ -597,7 +567,7 @@ plot_the_pca(pca_df = m_pca_hip_t$matrix_pca,
 #     Tibia Adipocytes      #
 #############################
 ```{r,fig.width=6,fig.height=3}
-m_pca_tibia_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_tibia_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
 
 plot_the_pca(pca_df = m_pca_tibia_adipocytes$matrix_pca,
              color_var =  "health_status",shape_var = "tissue_celltype_lowercase",
@@ -621,7 +591,7 @@ plot_the_pca(pca_df = m_pca_tibia_adipocytes$matrix_pca,
 #     Tibia SVF/Pellet      #
 #############################
 ```{r,fig.width=6,fig.height=3}
-m_pca_tibia_svf <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_tibia_svf <- run_pca_structuring(matrix_data = matrix_counts_tibia |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
 
 plot_the_pca(pca_df = m_pca_tibia_svf$matrix_pca,
              color_var =  "health_status",shape_var = "tissue_celltype_lowercase",
@@ -645,7 +615,7 @@ plot_the_pca(pca_df = m_pca_tibia_svf$matrix_pca,
 #     Hip Adipocytes        #
 #############################
 ```{r,fig.width=6,fig.height=3}
-m_pca_hip_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_hip_adipocytes <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("adipocyte")),transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
 
 plot_the_pca(pca_df = m_pca_hip_adipocytes$matrix_pca,
              color_var =  "health_status",shape_var = "tissue_celltype_lowercase",
@@ -673,7 +643,7 @@ plot_the_pca(pca_df = m_pca_hip_adipocytes$matrix_pca,
 #     Hip SVF/Pellet      #
 #############################
 ```{r,fig.width=6,fig.height=3}
-m_pca_hip_pellet <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_hip_pellet <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
 
 
 plot_the_pca(pca_df = m_pca_hip_pellet$matrix_pca,
@@ -694,7 +664,7 @@ plot_the_pca(pca_df = m_pca_hip_pellet$matrix_pca,
 
 ```{r}
 # Transposed, we can not really plot the sample contribution for all genes... 
-m_pca_hip_pellet_t <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df)
+m_pca_hip_pellet_t <- run_pca_structuring(matrix_data = matrix_counts_hip |> dplyr::select("Gene_id","Gene_name",ends_with("pellet")),transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df)
 
 
 plot_the_pca(pca_df = m_pca_hip_pellet_t$matrix_pca,
@@ -1144,7 +1114,8 @@ normalize_and_pca <- function(count_matrix, gene_info, metadata,transpose=FALSE)
   message("Performing PCA.\n")
     # Check transpose
   if (transpose){
-    y_normalized_corrected_pcas <- prcomp(t(logcpm), center = TRUE, scale. = TRUE)
+    y_normalized_corrected_pcas <- prcomp(t(logcpm), center = TRUE, scale. = TRUE) #Samples shall be explaiined by the features (columns)
+    message("Samples as rows and genes as columns!")
   } else {
     y_normalized_corrected_pcas <- prcomp(logcpm, center = TRUE, scale. = TRUE)
   }
@@ -1155,8 +1126,10 @@ normalize_and_pca <- function(count_matrix, gene_info, metadata,transpose=FALSE)
   # Calculate the percentage of variance for each principal component
   percentVar_obj <- y_normalized_corrected_pcas$sdev^2 / sum(y_normalized_corrected_pcas$sdev^2)
   
-  # Save PCA results as a data frame
-  y_normalized_corrected_pcas_df <- as.data.frame(y_normalized_corrected_pcas[2]$rotation)
+  message("ROTATION(loadings),this shall be the genes!")
+  # Save PCA results as a data frame (this shall be the genes!)
+  y_normalized_corrected_pcas_df_loadings <- as.data.frame(y_normalized_corrected_pcas[2]$rotation)
+  y_normalized_corrected_pcas_df <- as.data.frame(y_normalized_corrected_pcas$x)
   
   # Merge PCA results with metadata
   y_normalized_corrected_pcas_df <- merge(y_normalized_corrected_pcas_df, metadata, by.x = "row.names", by.y = "sampleID")
@@ -1171,6 +1144,7 @@ normalize_and_pca <- function(count_matrix, gene_info, metadata,transpose=FALSE)
   
   return(list(
     pca_results = y_normalized_corrected_pcas_df,
+    pca_loadings = y_normalized_corrected_pcas_df_loadings,
     percent_variance = percentVar_obj,
     logcpm=logcpm
     
@@ -1183,7 +1157,7 @@ results <- normalize_and_pca(
   count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG,
   gene_info = rownames(m_pca_tibia$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_tibia,
-  transpose = FALSE
+  transpose = TRUE
 )
 
 #md_df_tibia$Age <- as.factor(md_df_tibia$Age)
@@ -1220,7 +1194,7 @@ results <- normalize_and_pca(
   count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet") |> dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_tibia$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "pellet",),
-  transpose = FALSE
+  transpose = TRUE
 )
 
 
@@ -1261,7 +1235,7 @@ results <- normalize_and_pca(
   count_matrix = m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte") |> dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_tibia$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_tibia |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")))) {
   
@@ -1304,7 +1278,7 @@ results <- normalize_and_pca(
   count_matrix = m_pca_hip$matrix_raw_filtered_samples_for_DEG,
   gene_info = rownames(m_pca_hip$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_hip,
-  transpose = FALSE)
+  transpose = TRUE)
 
 #md_df_tibia$Age <- as.factor(md_df_tibia$Age)
 for (column_to_plot in c("Tissue/cell type","Age","health_status","Group", "Plate.ID")) {
@@ -1345,7 +1319,7 @@ results <- normalize_and_pca(
                                                                  dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_hip$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "adipocyte"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "adipocyte")))) {
   if (!(column_to_plot %in% colnames(results$pca_results))){
@@ -1380,7 +1354,7 @@ results <- normalize_and_pca(
                                                                  dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_hip$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "pellet"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_hip |> dplyr::filter(tissue_celltype_lowercase == "pellet")))) {
   
@@ -1533,8 +1507,10 @@ run_pca_structuring_2 <- function(matrix_data,transpose=FALSE,filter_empty_sampl
       stop("Not enough data points for PCA after transpose.")
     }
     m <- prcomp(t(data_matrix_filtered), scale. = TRUE, center = TRUE)
+    message("Samples as rows and genes as columns(features)!")
     # For transpose=TRUE, rotation contains sample loadings
-    m_df <- as.data.frame(m$rotation)
+    m_df_loadings <- as.data.frame(m$rotation)
+    m_df <- as.data.frame(m$x)
   } else {
     # Genes as rows, samples as columns  
     if (nrow(data_matrix_filtered) < 2 || ncol(data_matrix_filtered) < 2) {
@@ -1542,7 +1518,8 @@ run_pca_structuring_2 <- function(matrix_data,transpose=FALSE,filter_empty_sampl
     }
     m <- prcomp(data_matrix_filtered, scale. = TRUE, center = TRUE)
     # For transpose=FALSE, x contains sample scores
-    m_df <- as.data.frame(m$rotation)
+    #m_df <- as.data.frame(m$rotation) #the gene that is most represented across samples
+    m_df <- as.data.frame(m$x)
   }
   
   m_df$sample_id <- rownames(m_df)
@@ -1550,9 +1527,9 @@ run_pca_structuring_2 <- function(matrix_data,transpose=FALSE,filter_empty_sampl
   # Merge with metadata if provide and the data matrix was transposed else do not merge
   #  if (transpose && !is.null(md_df)) {
   if (transpose) {
-    m_merged <- m_df
-  } else {
     m_merged <- merge(x = m_df, y = md_df, by.x = "sample_id", by.y = "full_name", all.x = TRUE)
+  } else {
+    m_merged <- m_df
   }
   
   # Calculate variance explained
@@ -1561,6 +1538,7 @@ run_pca_structuring_2 <- function(matrix_data,transpose=FALSE,filter_empty_sampl
   return(list(
     matrix_raw = data_matrix_filtered,
     matrix_pca = m_merged,
+    matrix_pca_loadings = m_df_loadings,
     percentVar_obj = percent_var
   ))
 }
@@ -1573,7 +1551,7 @@ run_pca_structuring_2 <- function(matrix_data,transpose=FALSE,filter_empty_sampl
 ```{r}
 #m_samples_bone <- cbind(m_pca_tibia$matrix_raw,m_pca_hip$matrix_raw[3:ncol(m_pca_hip$matrix_raw)])
 # If want to avoid a second function, need to add like a column with "Filtered Sample" Yes, No... and check for that column if exist...
-m_pca_samples_bone <- run_pca_structuring_2(matrix_data = m_samples_bone,transpose = FALSE,filter_empty_samples_counts = 30,md_df = md_df_bone)
+m_pca_samples_bone <- run_pca_structuring_2(matrix_data = m_samples_bone,transpose = TRUE,filter_empty_samples_counts = 30,md_df = md_df_bone) #samples as rows, and genes as columns.
 ```
 
 
@@ -1640,7 +1618,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone,
-  transpose = FALSE
+  transpose = TRUE
 )
 
 for (column_to_plot in c(colnames(md_df_bone))) {
@@ -1663,7 +1641,8 @@ for (column_to_plot in c(colnames(md_df_bone))) {
 
 ```
 
-
+# horizontally in hip and tibia 
+# vertically in adipocytes and pellet
 
 # Sclerotic all
 ```{r warning=FALSE}
@@ -1674,7 +1653,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic"),
-  transpose = FALSE
+  transpose = TRUE
 )
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic")))) {
@@ -1707,7 +1686,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic")))) {
   #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
@@ -1727,7 +1706,8 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 }
 ```
 
-
+# again horizontally tibias and hips
+# again vertically adipo and pellet
 
 
 #Sclerotic only Pellets
@@ -1739,7 +1719,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "pellet")))) {
   #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
@@ -1757,6 +1737,11 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
                      title = "Tibias and Hips (Normalized TMM)",subtitle = "TSP HSP",text_var = "sample_number"))
 }
 ```
+
+# again horizontally tibias and hips
+
+
+
 # Non sclerotic only pellets
 ```{r warning=FALSE}
 results <- normalize_and_pca(
@@ -1766,7 +1751,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "pellet")))) {
   #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
@@ -1785,6 +1770,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
     )
 }
 ```
+# again horizontally tibias and hip
 # Sclerotic adipocytes only
 ```{r warning=FALSE}
 results <- normalize_and_pca(
@@ -1794,7 +1780,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "sclerotic" & tissue_celltype_lowercase == "adipocyte")))) {
   #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
@@ -1812,6 +1798,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
                      title = "Tibias and Hips (Normalized TMM)",subtitle = "TSA HSA",text_var = "sample_number"))
 }
 ```
+#again horizontally hip and tibias
 
 # Non scleoritc adipocytes only
 ```{r warning=FALSE}
@@ -1822,7 +1809,7 @@ results <- normalize_and_pca(
                                                                    dplyr::pull(sampleID)],
   gene_info = rownames(m_pca_samples_bone$matrix_raw),  # Ensure this is a data frame or matrix
   metadata = md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte"),
-  transpose = FALSE)
+  transpose = TRUE)
 
 for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "non.sclerotic" & tissue_celltype_lowercase == "adipocyte")))) {
   #print(plotly::ggplotly(plot_the_pca(pca_df = y_normalized_corrected_pcas_df,
@@ -1842,6 +1829,8 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
     )
 }
 ```
+# again horizontally tibias and hip
+
 # volcano function
 ```{r}
 plot_volcano <- function(results_table, 
@@ -2335,9 +2324,12 @@ print(time_taken)
 ```{r}
 # Fitted values and residuals, raw filtered counts are inside the d$counts
 fit_edgeR <- hip_adipocytes_sclerotic_vs_non_sclerotic$fit$fitted.values
-keep <- rowSums(cpm(d) >= 1) >= 2
-d <- d[keep, , keep.lib.sizes = FALSE]
-residuals_edgeR <- d$counts - fit_edgeR
+dim(fit_edgeR)
+dim(hip_adipocytes_sclerotic_vs_non_sclerotic$d$counts)
+#d <- hip_adipocytes_sclerotic_vs_non_sclerotic$d
+#keep <- rowSums(cpm(d$counts) >= 1) >= 2
+#d$counts <- d$counts[keep,]
+residuals_edgeR <- hip_adipocytes_sclerotic_vs_non_sclerotic$d$counts - fit_edgeR
 #residuals_edgeR <- residuals(fit)
 
 #####################################################################################
@@ -2348,7 +2340,7 @@ residuals_edgeR <- d$counts - fit_edgeR
 log2_fitted_edgeR <- cpm(fit_edgeR, log = TRUE, prior.count = 1)
 
 # Residuals: convert counts & fitted to log2CPM first, then subtract
-log2_counts_edgeR <- cpm(d$counts, log = TRUE, prior.count = 1)
+log2_counts_edgeR <- cpm(hip_adipocytes_sclerotic_vs_non_sclerotic$d$counts, log = TRUE, prior.count = 1)
 log2_residuals_edgeR <- log2_counts_edgeR - log2_fitted_edgeR
 
 # PCA on fitted values, what does the model predicts expects.
@@ -2370,22 +2362,31 @@ label_df <- data.frame(
 )
 
 
+
 # Build tidy data frames
 edgeR_f_df <- data.frame(
   PC1 = pca_edgeR_fit$x[,1],
   PC2 = pca_edgeR_fit$x[,2],
   Method = "edgeR_fitted_values",
-  Group = factor(d$samples$group),
-  Patient = factor(d$samples$patient)
+  sampleID=names(pca_edgeR_fit$x[,1])
+  #Group = factor(d$samples$group),
+  #Patient = factor(d$samples$patient)
 )
+
+edgeR_f_df <- edgeR_f_df |> dplyr::left_join(md_df_hip |> dplyr::filter(tissue_celltype_lowercase=="adipocyte"),by="sampleID")
+
 
 edgeR_r_df <- data.frame(
   PC1 = pca_edgeR_residuals$x[,1],
   PC2 = pca_edgeR_residuals$x[,2],
   Method = "edgeR_residuals",
-  Group = factor(d$samples$group),
-  Patient =  factor(d$samples$patient)
+  #Group = factor(d$samples$group),
+  #Patient =  factor(d$samples$patient)
+  sampleID=names(pca_edgeR_residuals$x[,1])
 )
+edgeR_r_df <- edgeR_r_df |> dplyr::left_join(md_df_hip |> dplyr::filter(tissue_celltype_lowercase=="adipocyte"),by="sampleID")
+
+
 
 # Combine for joint plotting
 combined_df <- rbind(edgeR_f_df, edgeR_r_df)
@@ -2394,7 +2395,7 @@ combined_df <- merge(combined_df, label_df, by = "Method")
 
 library(ggplot2)
 
-for (colorin in c("Group", "Patient")){
+for (colorin in c("Group", "sample_number","Age","Gender","BMI")){
   p <- ggplot(combined_df, aes(x = PC1, y = PC2, color = .data[[colorin]])) +
     geom_point(size = 2, alpha = 0.7) +
     facet_wrap(~ Method) +
@@ -2453,6 +2454,7 @@ volcano_hip_adipocytes_sclerotic_vs_non_sclerotic <- plot_volcano(results_table 
                                                                   gene_column = "genes",
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
                                                                   genes_of_interest = NULL)
+volcano_hip_adipocytes_sclerotic_vs_non_sclerotic
 ```
 
 
@@ -2499,6 +2501,7 @@ volcano_hip_pellet_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = hi
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_hip_pellet_sclerotic_vs_non_sclerotic
 ```
 ## Check!!
 The SRPX2 protein contains a TSR-1 domain, which is associated with the extracellular matrix and involved in cell-cell communication. 
@@ -2552,7 +2555,7 @@ volcano_hip_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = hip_scler
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
 
 #If possible remove ENSEMBLID from volcanoes
-
+volcano_hip_sclerotic_vs_non_sclerotic
 ```
 
 
@@ -2603,6 +2606,7 @@ volcano_tibia_adipocytes_sclerotic_vs_non_sclerotic <- plot_volcano(results_tabl
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_adipocytes_sclerotic_vs_non_sclerotic
 ```
 
 
@@ -2647,6 +2651,7 @@ volcano_tibia_pellet_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = 
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_pellet_sclerotic_vs_non_sclerotic
 ```
 # Tibia sclerotic vs non sclerotic
 
@@ -2690,6 +2695,7 @@ volcano_tibia_sclerotic_vs_non_sclerotic <- plot_volcano(results_table = tibia_s
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_tibia_sclerotic_vs_non_sclerotic
 ```
 
 # Bone
@@ -3019,6 +3025,7 @@ volcano_adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic <- plot_volcano(resul
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic
 ```
 
 
@@ -3071,6 +3078,7 @@ volcano_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- plot_volcano(results
                                                                   gene_column = "genes",
                                                                   genes_of_interest = NULL)
                                                                   #genes_of_interest = c("IL11","RCN2", "IL11", "CNTNAP2", "STMN2"))
+volcano_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
 ```
 
 
@@ -3202,951 +3210,957 @@ comparisons_list <- mget(comparison_names[!grepl(pattern ="^volcano_*",x =  comp
 comparisons_list
 ```
 
-# Volcanos 
-```{r}
-
-# old function
-
-library(ggplot2)
-library(ggrepel)
-
-volcano_plot_function <- function(df_cond, lg2fc_p, log2fc_n, p_adj, title_, colordown, colorup, down_e, up_e, top_rows_to_select_genes) {
-  
-  df_cond_1 <- df_cond |>
-    mutate(Regulation = case_when(
-      logFC > lg2fc_p & FDR < p_adj ~ "UP",
-      logFC < log2fc_n & FDR < p_adj ~ "DOWN",
-      TRUE ~ "NO"
-    )) |>
-    mutate(Regulation = replace_na(Regulation, "NO")) |>
-    mutate(HS = ifelse(FDR <= (df_cond |> arrange(FDR) |> slice_head(n = top_rows_to_select_genes) |> pull(FDR)), "YES", "NO"))
-  
-  p1 <- ggplot(data = df_cond_1, aes(x = logFC, y = -log10(FDR), col = Regulation)) +
-    geom_jitter(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), size = 1) +
-    scale_color_manual(labels = c(down_e, "NO", up_e), values = c(colordown, "black", colorup)) +
-    geom_vline(xintercept = c(-1, 1), col = "red") +
-    geom_hline(yintercept = -log10(0.05), col = "red") +
-    labs(title = title_) +
-    xlim(-10, 10) +
-    ylim(0, 5) +
-    theme(panel.grid = element_blank(),
-          panel.background = element_rect(fill = "transparent"),
-          panel.border = element_rect(fill = "transparent"),
-          legend.title = element_text(size = 7),
-          legend.text = element_text(size = 7),
-          axis.text = element_text(size = 7),
-          axis.title = element_text(size = 7, face = "bold")) +
-    geom_text_repel(data = df_cond_1, label = ifelse(df_cond_1$HS == "YES", as.character(df_cond_1$genes), ""),
-                    color = "black", size = 2) +
-    geom_point(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), pch = 21, size = 1.1, color = "black",
-               data = df_cond_1 |> filter(HS == "YES"), aes(x = logFC, y = -log10(FDR))) +
-    geom_point(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), pch = 21, size = 1.2, color = "black",
-               data = df_cond_1 |> filter(HS == "YES"), aes(x = logFC, y = -log10(FDR)))
-  
-  return(list(plot = p1, data_volc = p1$data))
-}
-```
-
-
-```{r,fig.height=4,fig.width=3}
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano <- volcano_plot_function(df_cond = pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table,
-                                                                                  lg2fc_p = 1,log2fc_n = -1,
-                                                                                  p_adj = 0.05,
-                                                                                  top_rows_to_select_genes = 10,
-                                                                                  title_= "Pellets Hip and Tibia Non-sclerotic vs Sclerotic",
-                                                                                  colordown = "#999999",
-                                                                                  down_e ="sclerotic",
-                                                                                  up_e ="non.sclerotic",
-                                                                                  colorup = "#E69F00")
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano
-```
-
-
-# personalized volcano
-
-
-```{r,fig.width=4,fig.height=5}
-# new "function"
-
-# pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |>
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table |>
-  dplyr::mutate(gene_type = dplyr::case_when(
-    logFC >= 1 & FDR < 0.05 ~ "up",
-    logFC <= -1 & FDR < 0.05 ~ "down",
-    TRUE ~ "ns"))
-
-
-#max(without_wt_and_2_samples$log2FoldChange)
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> dplyr::count(gene_type)
-
-
-
-#Clean the predicted and cDNA RiK genes
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |>
-  #dplyr::filter(!grepl(x = mgi_symbol,pattern = "^Gm\\d+")) |>
-  #dplyr::filter(grepl(x = mgi_description,pattern = "predicted gene*")) |>
-  #dplyr::filter(!grepl(x = mgi_symbol,pattern = "*Rik$")) |> 
-  dplyr::filter(genes  != "")
-
-write.table(x = pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod,
-            file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_filtered_and_empty_values_in_external_gene_name.txt",
-            sep = "\t",
-            row.names = FALSE,
-            col.names = TRUE)
-
-
-# #interesting gene list
-# lists_gata4_without_WT_and_G4RS13_and_G4RS21_deseq_anno_counts$TRANSHET_vs_HET |> filter(padj < 0.05 & abs(log2FoldChange) > 1) |> 
-#   arrange(padj) |> slice_max(order_by = log2FoldChange,n = 25,with_ties = FALSE) |> pull(mgi_symbol)
-# lists_gata4_without_WT_and_G4RS13_and_G4RS21_deseq_anno_counts$TRANSHET_vs_HET |> filter(padj < 0.05 & abs(log2FoldChange) > 1) |> 
-#   arrange(padj) |> slice_min(order_by = log2FoldChange,n = 25,with_ties = FALSE) |> pull(mgi_symbol)
-
-ints_up <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |>
-  dplyr::filter(FDR < 0.05 & logFC >= 1) |> 
-  dplyr::arrange(FDR) |>
-  # dplyr::slice_max(padj + log2FoldChange,n = 10) |> 
-  dplyr::slice(1:10) |> 
-  dplyr::pull(genes)
-
-ints_down <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |>
-  dplyr::filter(FDR <= 0.05 & logFC <= -1) |> 
-  dplyr::arrange(FDR) |>
-  dplyr::slice(1:10) |> 
-  # dplyr::slice_min(padj + log2FoldChange,n = 10) |>
-  dplyr::pull(genes)
-
-ints <- c(ints_up,ints_down)
-
-ints_genes <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints) |> dplyr::distinct(genes,.keep_all = TRUE)
-
-ints_down <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints_down) |> dplyr::distinct(genes,.keep_all = TRUE)
-
-ints_up <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints_up) |> dplyr::distinct(genes,.keep_all = TRUE)
-
-
-#add special genes of interest
-
-to_add_gene <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes == "COL7A1") 
-to_add_gene$gene_type <- "ns"
-
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- rbind(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod,to_add_gene)
-ints_genes <- rbind(ints_genes,to_add_gene)
-
-
-# Add colour, size and alpha (transparency) 
-cols <- c("up" = "#ffad73", "down" = "#26b3ff", "ns" = "grey") 
-sizes <- c("up" = 2, "down" = 2, "ns" = 1) 
-alphas <- c("up" = 1, "down" = 1, "ns" = 0.5)
-
-
-
-p1 <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |>
-  ggplot(aes(x = logFC,
-             y = -log10(FDR))) +
-  geom_point(aes(colour = gene_type), 
-             alpha = 0.8, 
-             shape = 16,
-             size = 1) +
-  geom_hline(yintercept = -log10(0.05),
-             linetype = "dashed") + 
-  geom_vline(xintercept = c(log2(0.5), log2(2)),
-             linetype = "dashed") +
-  geom_point(data = ints_up,
-             shape = 21,
-             size = 2,
-             fill = "tomato3", 
-             colour = "black") + 
-  geom_point(data = ints_down,
-             shape = 21,
-             size = 2,
-             fill = "steelblue", 
-             colour = "black") +
-  geom_point(data = to_add_gene,
-             shape = 21,
-             size = 3,
-             fill = "green", 
-             colour = "black") +
-  geom_label_repel(data = ints_genes, # Add labels last to appear as the top layer  
-                   aes(label = genes),
-                   force = 2,
-                   nudge_y = .2,nudge_x = 0.1,
-                   max.overlaps = 30,size = 2) +
-  scale_colour_manual(values = cols) + 
-  scale_x_continuous(breaks = c(seq(-10, 10, 2)),     
-                     limits = c(-10, 10)) 
-
-ggsave(plot = p1,
-       filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_filtered_and_empty_values_in_external_gene_name.tiff",
-       device = "tiff",
-       dpi = 77,
-       units = "in",
-       width = 7,height = 12)
-
-p1
-
-
-```
-
-```{r}
-# Add colour, size and alpha (transparency) 
-cols <- c("up" = "#ffad73", "down" = "#26b3ff", "ns" = "grey") 
-sizes <- c("up" = 2, "down" = 2, "ns" = 1) 
-alphas <- c("up" = 1, "down" = 1, "ns" = 0.5)
-
-
-
-p2 <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |>
-  ggplot(aes(x = logFC,
-             y = -log10(FDR))) +
-  geom_point(aes(colour = gene_type), 
-             alpha = 0.8, 
-             shape = 16,
-             size = 1) +
-  geom_hline(yintercept = -log10(0.05),
-             linetype = "dashed") +
-  geom_vline(xintercept = c(log2(0.5), log2(2)),
-             linetype = "dashed") +
-  # geom_point(data = ints_up,
-  #            shape = 21,
-  #            size = 2,
-  #            fill = "tomato3", 
-  #            colour = "black") + 
-  # geom_point(data = ints_down,
-  #            shape = 21,
-  #            size = 2,
-  #            fill = "steelblue", 
-  #            colour = "black") +
-  # geom_point(data = to_add_gene,
-  #            shape = 21,
-  #            size = 3,
-  #            fill = "blue", 
-  #            colour = "black") +
-  # geom_label_repel(data = ints_genes, # Add labels last to appear as the top layer  
-  #                  aes(label = external_gene_name),
-  #                  force = 2,
-  #                  nudge_y = 1) +
-  scale_colour_manual(values = cols) + 
-  scale_x_continuous(breaks = c(seq(-10, 10, 2)),     
-                     limits = c(-10, 10)) 
-
-
-ggsave(plot = p2,
-       filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_V2.svg",
-       device = "svg",
-       dpi = 77,
-       units = "in",
-       width = 7,height = 12)
-
-p2
-```
-# Heatmap
-```{r}
-library(heatmaply)
-library(dplyr)
-library(RColorBrewer)
-
-# Prepare the data
-# pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table %>%
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table %>%
-
-  mutate(gene_type = case_when(
-    logFC >= 1 & FDR < 0.05 ~ "up",
-    logFC <= -1 & FDR < 0.05 ~ "down",
-    TRUE ~ "ns"
-  )) %>%
-  filter(genes != "") %>%
-  arrange(FDR) %>%
-  slice_head(n = 500)
-
-# Prepare the raw counts matrix
-raw_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>%
-  select(starts_with("X"), genes) %>%
-  # left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$colsums_samples, by = "genes") %>%
-  dplyr::left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") |> 
-  dplyr::select(starts_with("X")) %>%
-  as.matrix()
-
-rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
-
-
-
-# Prepare the normalized counts matrix
-# norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$normalized_matrix)
-norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix)
-norm_counts_df$genes <- rownames(norm_counts_df)
-norm_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>%
-  dplyr::select(starts_with("X"), genes) %>%
-  dplyr::left_join(norm_counts_df, by = "genes") %>%
-  dplyr::select(starts_with("X")) %>%
-  as.matrix()
-
-rownames(norm_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
-norm_counts <- na.omit(norm_counts)
-```
-
-
-# Raw counts
-```{r}
-# Define the color palette
-my_palette <- rev(colorRampPalette(brewer.pal(11, "RdYlBu"))(256))
-
-# Generate the heatmap
-heatmaply(
-  raw_counts,
-  scale_fill_gradient_fun = scale_fill_gradientn(
-    colours = c("#313695", "#4575B4", "#74ADD1", "#ABD9E9", "white", "#FDAE61", "#F46D43", "#D73027", "#A50026"),
-    limits = c(-1, 1),
-    values = scales::rescale(c(-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1))
-  ),
-  col_side_colors = tibble::tibble("<b>Column Names</b>" = md_df_bone %>% filter(tissue_celltype == "pellet") %>% pull(health_status)),
-  col_side_palette = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"),
-  hide_colorbar = FALSE,
-  showticklabels = TRUE,
-  Rowv = TRUE,
-  Colv = TRUE,
-  plot_method = "ggplot",
-  scale = "none",
-  subplot_widths = c(0.2, 0.3),
-  subplot_heights = c(0.1, 0.02, 0.88),
-  key.title = "Expression Z-Score\nRaw Counts Values",
-  grid_color = "white",
-  grid_width = 0.71,
-  fontsize_row = 7,
-  hclust_method = "mcquitty",
-  main = "pellets non.sclerotic vs sclerotic",
-  file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/50_heatmap_plotly.html"
-)
-
-```
-
-# Norm counts
-```{r}
-# Define the color palette
-my_palette <- rev(colorRampPalette(brewer.pal(11, "RdYlBu"))(256))
-
-# Generate the heatmap
-heatmaply(
-  norm_counts,
-  scale_fill_gradient_fun = scale_fill_gradientn(
-    colours = c("#313695", "#4575B4", "#74ADD1", "#ABD9E9", "white", "#FDAE61", "#F46D43", "#D73027", "#A50026"),
-    limits = c(-1, 1),
-    values = scales::rescale(c(-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1))
-  ),
-  col_side_colors = tibble::tibble("<b>Column Names</b>" = md_df_bone %>% filter(tissue_celltype == "pellet") %>% pull(health_status)),
-  col_side_palette = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"),
-  hide_colorbar = FALSE,
-  showticklabels = TRUE,
-  Rowv = TRUE,
-  Colv = TRUE,
-  plot_method = "ggplot",
-  scale = "none",
-  subplot_widths = c(0.2, 0.3),
-  subplot_heights = c(0.1, 0.02, 0.88),
-  key.title = "Expression Z-Score\nNormalized Counts Values",
-  grid_color = "white",
-  grid_width = 0.71,
-  fontsize_row = 7,
-  hclust_method = "mcquitty",
-  main = "pellets non.sclerotic vs sclerotic",
-  file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/Norm_50_heatmap_plotly.html"
-)
-
-```
-# Raw counts pheatmap
-```{r}
-library(ComplexHeatmap)
-library(pheatmap)
-library(svglite)
-library(dplyr)
-
-# Calculate Pearson correlation distance
-distance.row <- as.dist(1 - cor(t(raw_counts)))
-distance.col <- as.dist(1 - cor(raw_counts))
-
-# Perform average linkage clustering
-cluster.row <- hclust(distance.row, method = "average")
-cluster.col <- hclust(distance.col, method = "average")
-
-# Prepare annotation data
-annotation_col <- as.data.frame(colnames(raw_counts))
-colnames(annotation_col) <- "sample"
-annotation_col$sample_2 <- annotation_col$sample
-
-# Split the sample names into components
-annotation_col <- annotation_col %>%
-  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
-annotation_col <- annotation_col %>% select(-ID, -tissue, -type)
-
-# Merge with metadata
-annotation_col <- annotation_col |> 
-  dplyr::left_join(md_df_bone  |>  filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
-
-# Select relevant columns
-annotation_col <- annotation_col |> dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender)
-
-rownames(annotation_col) <- colnames(raw_counts)
-
-
-
-
-# Define color palette
-my_palette <- colorRampPalette(rev(brewer.pal(n = 58, name = "RdYlBu")))(256)
-
-# Define annotation colors
-annotation_colors <- list(
-  condition = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"),
-  #Plate.ID_tissue = c("plate 1_tibia" = "#1f78b4", "plate 2_tibia" = "#33a02c", "plate 3_hip" = "#e31a1c"),
-  Gender = c("M" = "#a6cee3", "F" = "#fb9a99")
-)
-
-# Print annotation_colors for debugging
-print(annotation_colors)
-
-# Generate the heatmap
-pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- pheatmap(
-  raw_counts,
-  scale = "row",
-  cluster_rows = cluster.row,
-  cluster_cols = cluster.col,
-  cellwidth = 12,
-  cellheight = 9,
-  breaks = seq(-1, 1, length.out = 101),
-  annotation_col = annotation_col,
-  annotation_colors = annotation_colors,
-  filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_pearson_corr_and_linkage_100_genes.png"
-)
-
-# Display the heatmap
-pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
-
-```
-# TODO change to logcpm
-# Norm counts pheatmap
-```{r}
-library(ComplexHeatmap)
-library(pheatmap)
-library(svglite)
-library(dplyr)
-
-# Calculate Pearson correlation distance
-distance.row <- as.dist(1 - cor(t(norm_counts)))
-distance.col <- as.dist(1 - cor(norm_counts))
-
-# Perform average linkage clustering
-cluster.row <- hclust(distance.row, method = "average")
-cluster.col <- hclust(distance.col, method = "average")
-
-# Prepare annotation data
-annotation_col <- as.data.frame(colnames(norm_counts))
-colnames(annotation_col) <- "sample"
-annotation_col$sample_2 <- annotation_col$sample
-
-# Split the sample names into components
-annotation_col <- annotation_col %>%
-  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
-annotation_col <- annotation_col %>% select(-ID, -tissue, -type)
-
-# Merge with metadata
-annotation_col <- annotation_col %>%
-  dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
-
-# Select relevant columns
-annotation_col <- annotation_col %>% dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender)
-
-rownames(annotation_col) <- colnames(norm_counts)
-
-
-
-
-# Define color palette
-my_palette <- colorRampPalette(rev(brewer.pal(n = 58, name = "RdYlBu")))(256)
-
-# Define annotation colors
-annotation_colors <- list(
-  condition = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"),
-  #Plate.ID_tissue = c("plate 1_tibia" = "#1f78b4", "plate 2_tibia" = "#33a02c", "plate 3_hip" = "#e31a1c"),
-  Gender = c("M" = "#a6cee3", "F" = "#fb9a99")
-)
-
-# Print annotation_colors for debugging
-print(annotation_colors)
-
-# Generate the heatmap
-pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- pheatmap(
-  norm_counts,
-  scale = "row",
-  cluster_rows = cluster.row,
-  cluster_cols = cluster.col,
-  cellwidth = 12,
-  cellheight = 9,
-  breaks = seq(-1, 1, length.out = 101),
-  annotation_col = annotation_col,
-  annotation_colors = annotation_colors,
-  filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_pearson_corr_and_linkage_100_genes.png"
-)
-
-# Display the heatmap
-pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic
-
-```
-
-
-
-# Model, try to predict condition (non.sclerotic vs sclerotic) using a model and the metadata.
-# Randomforest first attempt
-```{r,fig.height=4, fig.width=6}
-library(randomForest)
-library(caret)
-
-
-library(heatmaply)
-library(dplyr)
-library(RColorBrewer)
-
-# Prepare the data, we take either the top DEG or the most variable genes, or an intersection of those two.
-#pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> 
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table |>
-  mutate(gene_type = case_when(
-    logFC >= 1 & FDR < 0.05 ~ "up",
-    logFC <= -1 & FDR < 0.05 ~ "down",
-    TRUE ~ "ns")) |>
-  filter(genes != "") |> #,
-         #FDR < 0.05) |> 
-  arrange(FDR) |>
-  slice_head(n = 500) #get top 500 DEG genes
-
-
-# Prepare the dataset v2, select the most variable genes (top 1k): Variance-based selection (remove low-variance genes) use the normalized counts, so technical variability is removed.
-
-pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix
-# norm_matrix <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix
-# # Calculate variance for each gene (row)
-# gene_variances <- apply(norm_matrix, 1, var, na.rm = TRUE)
-# 
-# # Get the names of the top 2000 most variable genes
-# top_1k_genes <- names(sort(gene_variances, decreasing = TRUE)[1:1000])
-# 
-# # Extract the subset matrix with only the top 1k most variable genes
-# top_1k_matrix <- norm_matrix[top_1k_genes, ]
-# # Check dimensions
-# dim(top_1k_matrix)  # Should be [2000, number_of_samples]
-# 
-# # Optional: View the variance distribution
-# summary(gene_variances)
-# hist(gene_variances, main = "Distribution of Gene Variances", xlab = "Variance")
-# 
-
-gene_vars <- apply(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix,1 , var, na.rm = TRUE)
-top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])  # Top 1000 most variable
-
-
-# Prepare the top 1000 variable genes and the top 500 DEG.
-# Combine approaches - intersection of variable and significant genes
-selected_genes <- intersect(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)
-if(length(selected_genes) < 500) {
-  # If intersection is too small, take union but limit to reasonable number
-  selected_genes <- union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)#[1:min(1000, length(union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)))]
-}
-# Return all the unique values among both sides.
-length(union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes))
-
-###########################################################################################################
-# USE Normalized TMM data for RANDOM FOREST with the 1000 most variable genes and the top 500 DEG, union. #
-##################################################################################################
-
-
-
-# # Prepare the raw counts matrix
-# raw_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap |> 
-#   #select(starts_with("X"), genes) |> 
-#   select(genes) |> 
-#   # left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$colsums_samples, by = "genes") %>%
-#   left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") |> 
-# 
-#   select(starts_with("X")) |> 
-#   as.matrix()
-# 
-# rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
-
-
-
-# Prepare the normalized counts matrix
-# norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$normalized_matrix)
-# norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix)
-# norm_counts_df$genes <- rownames(norm_counts_df)
-#dim(norm_counts_df)
-#selected_genes <-data.frame(selected_genes,column="genes")
-norm_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,]
-  # select(starts_with("X")) |> 
-  # as.matrix()
-#rownames(norm_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes
-norm_counts <- na.omit(norm_counts)
-dim(norm_counts)
-
-
-
-
-# Prepare annotation data
-annotation_col <- as.data.frame(colnames(norm_counts))
-colnames(annotation_col) <- "sample"
-annotation_col$sample_2 <- annotation_col$sample
-
-# Split the sample names into components
-annotation_col <- annotation_col |> 
-  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
-
-
-####################################################################################################
-# # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     #
-####################################################################################################
-# annotation_col <- annotation_col |>
-#   left_join(oarsi_data_scores,by = c("ID" = "sampleID")) |>
-#   mutate(oarsi = as.numeric(oarsi)) |>
-#   mutate(oarsi = if_else(is.na(oarsi), 0, oarsi))
-# 
-
-# Add BMI,Age to samples
-annotation_col <- annotation_col |> 
-  # left_join(md_df[md_df$tissue_celltype_lowercase == "pellet",] [,c("sampleID","Plate.ID","nanodrop","a260.230","RIN...24","Age","Gender","BMI","Row.y","Column.y","sample_number")],by =c("sample_2"="sampleID"))
-  dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")],by = c("sample_2"="sampleID"))
-
-annotation_col <- annotation_col %>% select(-ID, -tissue, -type, -sample_2,)
-
-# # Merge with metadata
-# annotation_col <- annotation_col %>%
-#   dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID"))
-# 
-# # Select relevant columns
-# annotation_col <- annotation_col %>% dplyr::select(condition, Gender, oarsi,BMI )#Plate.ID_tissue, Age, Gender)barcodePlate.ID, X260.230.value..Nanodrop.,Concentration..ng.µL
-# 
-# rownames(annotation_col) <- colnames(norm_counts)
-
-
-
-
-#combined_data <- cbind(t(raw_counts), annotation_col)
-combined_data <- cbind(t(norm_counts), annotation_col)
-
-#combined_data[,ncol(combined_data)]
-# NO 
-# NA VALUES NOT ALLOWED
-
-
-# Alternatively, you can remove rows with missing values
-# chec if any na..
-any(is.na(combined_data))
-sum(is.na(combined_data))
-combined_data <- na.omit(combined_data)
-dim(combined_data)
-#column_to_remove <- "MAMDC2-AS1"
-# combined_data <- combined_data %>% select(-all_of(column_to_remove))
-# Replace all hyphens with dots in column names
-colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
-# combined_data <- combined_data %>% select(-matches("AS1$"))
-# combined_data <- combined_data %>% select(-matches("AS2$"))
-# combined_data <- combined_data %>% select(-matches("IT1$"))
-# combined_data <- combined_data %>% select(-matches("EGLN2$"))
-# combined_data <- combined_data %>% select(-matches("-3$"))
-dim(combined_data)
-
-
-
-# ### Solve the issue with too many columns.... of the genes....
-# combined_data <- combined_data[,c(1:5000,ncol(combined_data),(ncol(combined_data)-1),(ncol(combined_data)-2),(ncol(combined_data)-3))]
-
-
-# Ensure the condition column is a factor
-combined_data$condition <- factor(combined_data$condition)
-#combined_data$oarsi <- as.factor(combined_data$oarsi)
-# Split the data into training and testing sets
-set.seed(123) # For reproducibility
-trainIndex <- caret::createDataPartition(combined_data$condition, p = .7, 
-                                  list = FALSE, 
-                                  times = 1)
-train_data <- combined_data[trainIndex, ]
-test_data <- combined_data[-trainIndex, ]
-
-# Train a Random Forest model, using oarsi in the data
-rf_model <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000)
-
-# Predict on the test data
-predictions <- predict(rf_model, test_data)
-
-# Evaluate the model
-caret::confusionMatrix(predictions, test_data$condition)
-
-# Feature importance
-randomForest::importance(rf_model)[order(randomForest::importance(rf_model)[,4],decreasing = TRUE),]
-randomForest::varImpPlot(rf_model)
-
-# Get importance scores
-importance_scores <- importance(rf_model)
-head(importance_scores[order(importance_scores[,1], decreasing = TRUE), ])
-
-print(rf_model)
-```
-
-# Accuracy, features that hurt the most the model when removed (very important for the decissions)
-# Gini, features that separate the best our classes.
-
-
-```{r}
-# Get top 10 most important features
-top_10_features <- rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)[1:10]]
-
-cat("Top 10 most important features for predicting sclerosis:\n")
-for(i in 1:10) {
-  feature <- top_10_features[i]
-  importance_val <- round(importance_scores[feature, 1], 3)
-  cat(i, ".", feature, "- Importance:", importance_val, "\n")
-}
-
-# Check if clinical features are important
-clinical_features <- c("BMI", "Age", "Gender")
-clinical_ranks <- sapply(clinical_features, function(x) {
-  which(rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)] == x)
-})
-cat("\nClinical feature rankings:\n")
-print(clinical_ranks)
-```
-
-# RF model with OARSI samples. (OLD) go at the end
-
-```{r}
-####################################################################################################
-# # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     #
-####################################################################################################
-## Load metadata of image scoring
-
-.libPaths("/home/mbotos/CLUSTER/RLibs/")
-library(readxl)
-sclerotic_scores <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "SC")
-non_sclerotic_scores <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "NS ")
-#Oarsi scoring
-# 0 Normal
-# 1 Small
-# 2 Supeficial
-# 3 25% arthrosis damage to the joint
-# 4 50 %
-# 5 75 %
-# 6 >75%
-```
-# Use the features of inflammation, cysts... and so on not only the final oarsi score. oabs --> predictive score..
-```{r}
-
-```
-
-
-# Extract and add the scores to the samples that have it.
-```{r}
-# Extract the row where 'oabs scoring' is 'OARSI scoring'
-non_sclerotic_scores_vec <- non_sclerotic_scores  |>
-  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
-  dplyr::select(where(is.numeric)) |> 
-  unlist(use.names = FALSE)
-
-sclerotic_scores_vec <- sclerotic_scores  |>
-  dplyr::filter(`oabs scoring` == "OARSI scoring") |> 
-  dplyr::select(where(is.numeric)) |> 
-  unlist(use.names = FALSE)
-
-names(non_sclerotic_scores)
-oarsi_data_scores <- data.frame(sampleID=paste0("X",names(non_sclerotic_scores)[2:length(names(non_sclerotic_scores))]),sclerotic_samples=sclerotic_scores_vec,non_sclerotic_samples=non_sclerotic_scores_vec)
-```
-```{r}
-# Prepare annotation data
-annotation_col <- as.data.frame(colnames(norm_counts))
-colnames(annotation_col) <- "sample"
-annotation_col$sample_2 <- annotation_col$sample
-
-# Split the sample names into components
-annotation_col <- annotation_col |> 
-  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
-# Add BMI,Age to samples
-
-annotation_col_sc <- annotation_col |> 
-  dplyr::filter(condition=="sclerotic") |> 
-  dplyr::left_join(md_df |> 
-              dplyr::filter(health_status == "sclerotic",
-                     tissue_celltype_lowercase == "pellet") |> 
-              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),
-            by = c("sample_2"="sampleID"))
-
-annotation_col_sc
-annotation_col_sc <- annotation_col_sc |>
-  dplyr::left_join(oarsi_data_scores |> 
-              dplyr::select(-non_sclerotic_samples),
-            by=c("ID"="sampleID"))
-annotation_col_sc
-# Select only samples containing oarsi scores
-annotation_col_sc <- annotation_col_sc |> 
-  dplyr::filter(!is.na(sclerotic_samples))
-annotation_col_sc
-
-
-
-
-
-
-annotation_col_nsc <- annotation_col |> 
-  dplyr::filter(condition == "non.sclerotic") |> 
-  dplyr::left_join(md_df |> 
-              dplyr::filter(health_status == "non.sclerotic",
-                     tissue_celltype_lowercase == "pellet") |> 
-              dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate..
-            by = c("sample_2"="sampleID"))
-annotation_col_nsc
-
-annotation_col_nsc <- annotation_col_nsc |>
-  dplyr::left_join(oarsi_data_scores |> 
-              dplyr::select(-sclerotic_samples),
-            by=c("ID"="sampleID"))
-annotation_col_nsc
-# Select only samples containing oarsi scores
-annotation_col_nsc <- annotation_col_nsc |> 
-  dplyr::filter(!is.na(non_sclerotic_samples))
-
-
-
-
-annotation_col_oarsi_samples <- dplyr::bind_rows(annotation_col_sc,annotation_col_nsc)
-annotation_col_oarsi_samples
-```
-
-```{r,fig.height=4,fig.width=6}
-
-#df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b)
-annotation_col_oarsi_samples <- annotation_col_oarsi_samples |> 
-  dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |> 
-  dplyr::select(-sclerotic_samples,-non_sclerotic_samples)
-  
-
-norm_counts_oarsi <-  norm_counts[,annotation_col_oarsi_samples$sample_2]
-combined_data <- cbind(t(norm_counts_oarsi), annotation_col_oarsi_samples)
-# NO -- NA -- VALUES NOT ALLOWED
-
-
-# Alternatively, you can remove rows with missing values
-# chec if any na..
-any(is.na(combined_data))
-sum(is.na(combined_data))
-combined_data <- na.omit(combined_data)
-dim(combined_data)
-#column_to_remove <- "MAMDC2-AS1"
-# combined_data <- combined_data %>% select(-all_of(column_to_remove))
-# Replace all hyphens with dots in column names
-colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
-# combined_data <- combined_data %>% select(-matches("AS1$"))
-# combined_data <- combined_data %>% select(-matches("AS2$"))
-# combined_data <- combined_data %>% select(-matches("IT1$"))
-# combined_data <- combined_data %>% select(-matches("EGLN2$"))
-# combined_data <- combined_data %>% select(-matches("-3$"))
-combined_data <- combined_data |>  select(-type,-sample_2,-tissue)
-dim(combined_data)
-
-
-
-# ### Solve the issue with too many columns.... of the genes....
-# combined_data <- combined_data[,c(1:5000,ncol(combined_data),(ncol(combined_data)-1),(ncol(combined_data)-2),(ncol(combined_data)-3))]
-
-
-# Ensure the condition column is a factor
-combined_data$condition <- as.factor(combined_data$condition)
-combined_data$oarsi_score <- as.factor(combined_data$oarsi_score)
-combined_data$Age <- as.factor(combined_data$Age)
-combined_data$Gender <- as.factor(combined_data$Gender)
-combined_data$BMI <- as.factor(combined_data$BMI)
-#combined_data$Column.y <- as.factor(combined_data$Column.y)
-#combined_data$Row.y <- as.factor(combined_data$Row.y)
-colnames(combined_data) <- gsub("-", ".", colnames(combined_data))
-
-#combined_data$oarsi <- as.factor(combined_data$oarsi)
-# Split the data into training and testing sets
-set.seed(123) # For reproducibility
-trainIndex <- caret::createDataPartition(combined_data$condition, p = .7, 
-                                  list = FALSE, 
-                                  times = 1)
-train_data <- combined_data[trainIndex, ]
-test_data <- combined_data[-trainIndex, ]
-# Train rf model, excluding oarsi scores and see how does it affect.
-# rf_model_oarsi <- randomForest::randomForest(condition ~ . - oarsi, data = train_data, importance = TRUE)
-# Keep oarsi
-rf_model_oarsi <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000)
-# Predict on the test data
-predictions <- predict(rf_model_oarsi, test_data)
-
-# Evaluate the model
-caret::confusionMatrix(predictions, test_data$condition)
-
-# Feature importance
-randomForest::importance(rf_model_oarsi)
-randomForest::varImpPlot(rf_model_oarsi)
-
-# Get importance scores
-importance_scores <- importance(rf_model_oarsi)
-head(importance_scores[order(importance_scores[,3], decreasing = TRUE), ])
-
-print(rf_model)
-```
-```{r,fig.width=6,fig.height=8}
-# Plot variable importance
-randomForest::varImpPlot(rf_model_oarsi, main = "Variable Importance")
-
-```
-```{r}
-# Get top 10 most important features
-top_10_features <- rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)[1:10]]
-
-cat("Top 10 most important features for predicting sclerosis:\n")
-for(i in 1:10) {
-  feature <- top_10_features[i]
-  importance_val <- round(importance_scores[feature, 1], 3)
-  cat(i, ".", feature, "- Importance:", importance_val, "\n")
-}
-
-# Check if clinical features are important
-clinical_features <- c("BMI", "Age", "Gender","oarsi_score")#,"Row.y","Column.y")
-clinical_ranks <- sapply(clinical_features, function(x) {
-  which(rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)] == x)
-})
-cat("\nClinical feature rankings:\n")
-print(clinical_ranks)
-```
-
-Gini: how goodd is the feature to split the trees...the highest the more important is the feature to obtain a pure split for the next decission.
-MeanDecrease Accuracy: how important is the feature that if removed the model performs worst, the higher the more important.
-
-```{r,fig.width=6,fig.height=8}
-# Plot variable importance
-randomForest::varImpPlot(rf_model, main = "Variable Importance")
-
-```
-
-```{r}
-# Extract importance
-importance <- randomForest::importance(rf_model)
-importance_df <- data.frame(Feature = rownames(importance), Importance = importance[, "MeanDecreaseGini"])
-
-# Plot top 20 important features
-top_features <- importance_df %>% top_n(20, Importance)
-ggplot(top_features, aes(x = reorder(Feature, Importance), y = Importance)) +
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  labs(title = "Top 20 Important Features", x = "Features", y = "Importance")
-
-```
-```{r}
-importance <- randomForest::importance(rf_model_oarsi)
-importance_df <- data.frame(Feature = rownames(importance), Importance = importance[, "MeanDecreaseGini"])
-
-# Plot top 20 important features
-top_features <- importance_df %>% top_n(20, Importance)
-ggplot(top_features, aes(x = reorder(Feature, Importance), y = Importance)) +
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  labs(title = "Top 20 Important Features", x = "Features", y = "Importance")
-
-```
+<!-- # Volcanos  -->
+<!-- ```{r} -->
+
+<!-- # old function -->
+
+<!-- library(ggplot2) -->
+<!-- library(ggrepel) -->
+
+<!-- volcano_plot_function <- function(df_cond, lg2fc_p, log2fc_n, p_adj, title_, colordown, colorup, down_e, up_e, top_rows_to_select_genes) { -->
+
+<!--   df_cond_1 <- df_cond |> -->
+<!--     mutate(Regulation = case_when( -->
+<!--       logFC > lg2fc_p & FDR < p_adj ~ "UP", -->
+<!--       logFC < log2fc_n & FDR < p_adj ~ "DOWN", -->
+<!--       TRUE ~ "NO" -->
+<!--     )) |> -->
+<!--     mutate(Regulation = replace_na(Regulation, "NO")) |> -->
+<!--     mutate(HS = ifelse(FDR <= (df_cond |> arrange(FDR) |> slice_head(n = top_rows_to_select_genes) |> pull(FDR)), "YES", "NO")) -->
+
+<!--   p1 <- ggplot(data = df_cond_1, aes(x = logFC, y = -log10(FDR), col = Regulation)) + -->
+<!--     geom_jitter(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), size = 1) + -->
+<!--     scale_color_manual(labels = c(down_e, "NO", up_e), values = c(colordown, "black", colorup)) + -->
+<!--     geom_vline(xintercept = c(-1, 1), col = "red") + -->
+<!--     geom_hline(yintercept = -log10(0.05), col = "red") + -->
+<!--     labs(title = title_) + -->
+<!--     xlim(-10, 10) + -->
+<!--     ylim(0, 5) + -->
+<!--     theme(panel.grid = element_blank(), -->
+<!--           panel.background = element_rect(fill = "transparent"), -->
+<!--           panel.border = element_rect(fill = "transparent"), -->
+<!--           legend.title = element_text(size = 7), -->
+<!--           legend.text = element_text(size = 7), -->
+<!--           axis.text = element_text(size = 7), -->
+<!--           axis.title = element_text(size = 7, face = "bold")) + -->
+<!--     geom_text_repel(data = df_cond_1, label = ifelse(df_cond_1$HS == "YES", as.character(df_cond_1$genes), ""), -->
+<!--                     color = "black", size = 2) + -->
+<!--     geom_point(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), pch = 21, size = 1.1, color = "black", -->
+<!--                data = df_cond_1 |> filter(HS == "YES"), aes(x = logFC, y = -log10(FDR))) + -->
+<!--     geom_point(position = position_jitter(height = 0.0000001, width = 0.0000001, seed = 123456), pch = 21, size = 1.2, color = "black", -->
+<!--                data = df_cond_1 |> filter(HS == "YES"), aes(x = logFC, y = -log10(FDR))) -->
+
+<!--   return(list(plot = p1, data_volc = p1$data)) -->
+<!-- } -->
+<!-- ``` -->
+
+
+<!-- ```{r,fig.height=4,fig.width=3} -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano <- volcano_plot_function(df_cond = pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table, -->
+<!--                                                                                   lg2fc_p = 1,log2fc_n = -1, -->
+<!--                                                                                   p_adj = 0.05, -->
+<!--                                                                                   top_rows_to_select_genes = 10, -->
+<!--                                                                                   title_= "Pellets Hip and Tibia Non-sclerotic vs Sclerotic", -->
+<!--                                                                                   colordown = "#999999", -->
+<!--                                                                                   down_e ="sclerotic", -->
+<!--                                                                                   up_e ="non.sclerotic", -->
+<!--                                                                                   colorup = "#E69F00") -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano -->
+<!-- ``` -->
+
+
+<!-- # personalized volcano -->
+
+
+<!-- ```{r,fig.width=4,fig.height=5} -->
+<!-- # new "function" -->
+
+<!-- # pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table |> -->
+<!--   dplyr::mutate(gene_type = dplyr::case_when( -->
+<!--     logFC >= 1 & FDR < 0.05 ~ "up", -->
+<!--     logFC <= -1 & FDR < 0.05 ~ "down", -->
+<!--     TRUE ~ "ns")) -->
+
+
+<!-- #max(without_wt_and_2_samples$log2FoldChange) -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> dplyr::count(gene_type) -->
+
+
+
+<!-- #Clean the predicted and cDNA RiK genes -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> -->
+<!--   #dplyr::filter(!grepl(x = mgi_symbol,pattern = "^Gm\\d+")) |> -->
+<!--   #dplyr::filter(grepl(x = mgi_description,pattern = "predicted gene*")) |> -->
+<!--   #dplyr::filter(!grepl(x = mgi_symbol,pattern = "*Rik$")) |>  -->
+<!--   dplyr::filter(genes  != "") -->
+
+<!-- write.table(x = pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod, -->
+<!--             file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_filtered_and_empty_values_in_external_gene_name.txt", -->
+<!--             sep = "\t", -->
+<!--             row.names = FALSE, -->
+<!--             col.names = TRUE) -->
+
+
+<!-- # #interesting gene list -->
+<!-- # lists_gata4_without_WT_and_G4RS13_and_G4RS21_deseq_anno_counts$TRANSHET_vs_HET |> filter(padj < 0.05 & abs(log2FoldChange) > 1) |>  -->
+<!-- #   arrange(padj) |> slice_max(order_by = log2FoldChange,n = 25,with_ties = FALSE) |> pull(mgi_symbol) -->
+<!-- # lists_gata4_without_WT_and_G4RS13_and_G4RS21_deseq_anno_counts$TRANSHET_vs_HET |> filter(padj < 0.05 & abs(log2FoldChange) > 1) |>  -->
+<!-- #   arrange(padj) |> slice_min(order_by = log2FoldChange,n = 25,with_ties = FALSE) |> pull(mgi_symbol) -->
+
+<!-- ints_up <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> -->
+<!--   dplyr::filter(FDR < 0.05 & logFC >= 1) |>  -->
+<!--   dplyr::arrange(FDR) |> -->
+<!--   # dplyr::slice_max(padj + log2FoldChange,n = 10) |>  -->
+<!--   dplyr::slice(1:10) |>  -->
+<!--   dplyr::pull(genes) -->
+
+<!-- ints_down <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> -->
+<!--   dplyr::filter(FDR <= 0.05 & logFC <= -1) |>  -->
+<!--   dplyr::arrange(FDR) |> -->
+<!--   dplyr::slice(1:10) |>  -->
+<!--   # dplyr::slice_min(padj + log2FoldChange,n = 10) |> -->
+<!--   dplyr::pull(genes) -->
+
+<!-- ints <- c(ints_up,ints_down) -->
+
+<!-- ints_genes <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints) |> dplyr::distinct(genes,.keep_all = TRUE) -->
+
+<!-- ints_down <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints_down) |> dplyr::distinct(genes,.keep_all = TRUE) -->
+
+<!-- ints_up <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes %in% ints_up) |> dplyr::distinct(genes,.keep_all = TRUE) -->
+
+
+<!-- #add special genes of interest -->
+
+<!-- to_add_gene <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> filter(genes == "COL7A1")  -->
+<!-- to_add_gene$gene_type <- "ns" -->
+
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod <- rbind(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod,to_add_gene) -->
+<!-- ints_genes <- rbind(ints_genes,to_add_gene) -->
+
+
+<!-- # Add colour, size and alpha (transparency)  -->
+<!-- cols <- c("up" = "#ffad73", "down" = "#26b3ff", "ns" = "grey")  -->
+<!-- sizes <- c("up" = 2, "down" = 2, "ns" = 1)  -->
+<!-- alphas <- c("up" = 1, "down" = 1, "ns" = 0.5) -->
+
+
+
+<!-- p1 <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> -->
+<!--   ggplot(aes(x = logFC, -->
+<!--              y = -log10(FDR))) + -->
+<!--   geom_point(aes(colour = gene_type),  -->
+<!--              alpha = 0.8,  -->
+<!--              shape = 16, -->
+<!--              size = 1) + -->
+<!--   geom_hline(yintercept = -log10(0.05), -->
+<!--              linetype = "dashed") +  -->
+<!--   geom_vline(xintercept = c(log2(0.5), log2(2)), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_point(data = ints_up, -->
+<!--              shape = 21, -->
+<!--              size = 2, -->
+<!--              fill = "tomato3",  -->
+<!--              colour = "black") +  -->
+<!--   geom_point(data = ints_down, -->
+<!--              shape = 21, -->
+<!--              size = 2, -->
+<!--              fill = "steelblue",  -->
+<!--              colour = "black") + -->
+<!--   geom_point(data = to_add_gene, -->
+<!--              shape = 21, -->
+<!--              size = 3, -->
+<!--              fill = "green",  -->
+<!--              colour = "black") + -->
+<!--   geom_label_repel(data = ints_genes, # Add labels last to appear as the top layer   -->
+<!--                    aes(label = genes), -->
+<!--                    force = 2, -->
+<!--                    nudge_y = .2,nudge_x = 0.1, -->
+<!--                    max.overlaps = 30,size = 2) + -->
+<!--   scale_colour_manual(values = cols) +  -->
+<!--   scale_x_continuous(breaks = c(seq(-10, 10, 2)),      -->
+<!--                      limits = c(-10, 10))  -->
+
+<!-- ggsave(plot = p1, -->
+<!--        filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_filtered_and_empty_values_in_external_gene_name.tiff", -->
+<!--        device = "tiff", -->
+<!--        dpi = 77, -->
+<!--        units = "in", -->
+<!--        width = 7,height = 12) -->
+
+<!-- p1 -->
+
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Add colour, size and alpha (transparency)  -->
+<!-- cols <- c("up" = "#ffad73", "down" = "#26b3ff", "ns" = "grey")  -->
+<!-- sizes <- c("up" = 2, "down" = 2, "ns" = 1)  -->
+<!-- alphas <- c("up" = 1, "down" = 1, "ns" = 0.5) -->
+
+
+
+<!-- p2 <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod |> -->
+<!--   ggplot(aes(x = logFC, -->
+<!--              y = -log10(FDR))) + -->
+<!--   geom_point(aes(colour = gene_type),  -->
+<!--              alpha = 0.8,  -->
+<!--              shape = 16, -->
+<!--              size = 1) + -->
+<!--   geom_hline(yintercept = -log10(0.05), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_vline(xintercept = c(log2(0.5), log2(2)), -->
+<!--              linetype = "dashed") + -->
+<!--   # geom_point(data = ints_up, -->
+<!--   #            shape = 21, -->
+<!--   #            size = 2, -->
+<!--   #            fill = "tomato3",  -->
+<!--   #            colour = "black") +  -->
+<!--   # geom_point(data = ints_down, -->
+<!--   #            shape = 21, -->
+<!--   #            size = 2, -->
+<!--   #            fill = "steelblue",  -->
+<!--   #            colour = "black") + -->
+<!--   # geom_point(data = to_add_gene, -->
+<!--   #            shape = 21, -->
+<!--   #            size = 3, -->
+<!--   #            fill = "blue",  -->
+<!--   #            colour = "black") + -->
+<!--   # geom_label_repel(data = ints_genes, # Add labels last to appear as the top layer   -->
+<!--   #                  aes(label = external_gene_name), -->
+<!--   #                  force = 2, -->
+<!--   #                  nudge_y = 1) + -->
+<!--   scale_colour_manual(values = cols) +  -->
+<!--   scale_x_continuous(breaks = c(seq(-10, 10, 2)),      -->
+<!--                      limits = c(-10, 10))  -->
+
+
+<!-- ggsave(plot = p2, -->
+<!--        filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Volcano/pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_volcano_mod_V2.svg", -->
+<!--        device = "svg", -->
+<!--        dpi = 77, -->
+<!--        units = "in", -->
+<!--        width = 7,height = 12) -->
+
+<!-- p2 -->
+<!-- ``` -->
+<!-- # Heatmap -->
+<!-- ```{r} -->
+<!-- library(heatmaply) -->
+<!-- library(dplyr) -->
+<!-- library(RColorBrewer) -->
+
+<!-- # Prepare the data -->
+<!-- # pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table %>% -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table %>% -->
+
+<!--   mutate(gene_type = case_when( -->
+<!--     logFC >= 1 & FDR < 0.05 ~ "up", -->
+<!--     logFC <= -1 & FDR < 0.05 ~ "down", -->
+<!--     TRUE ~ "ns" -->
+<!--   )) %>% -->
+<!--   filter(genes != "") %>% -->
+<!--   arrange(FDR) %>% -->
+<!--   slice_head(n = 500) -->
+
+<!-- # Prepare the raw counts matrix -->
+<!-- raw_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>% -->
+<!--   select(starts_with("X"), genes) %>% -->
+<!--   # left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$colsums_samples, by = "genes") %>% -->
+<!--   dplyr::left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") |>  -->
+<!--   dplyr::select(starts_with("X")) %>% -->
+<!--   as.matrix() -->
+
+<!-- rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes -->
+
+
+
+<!-- # Prepare the normalized counts matrix -->
+<!-- # norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$normalized_matrix) -->
+<!-- norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix) -->
+<!-- norm_counts_df$genes <- rownames(norm_counts_df) -->
+<!-- norm_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap %>% -->
+<!--   dplyr::select(starts_with("X"), genes) %>% -->
+<!--   dplyr::left_join(norm_counts_df, by = "genes") %>% -->
+<!--   dplyr::select(starts_with("X")) %>% -->
+<!--   as.matrix() -->
+
+<!-- rownames(norm_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes -->
+<!-- norm_counts <- na.omit(norm_counts) -->
+<!-- ``` -->
+
+
+<!-- # Raw counts -->
+<!-- ```{r} -->
+<!-- # Define the color palette -->
+<!-- my_palette <- rev(colorRampPalette(brewer.pal(11, "RdYlBu"))(256)) -->
+
+<!-- # Generate the heatmap -->
+<!-- heatmaply( -->
+<!--   raw_counts, -->
+<!--   scale_fill_gradient_fun = scale_fill_gradientn( -->
+<!--     colours = c("#313695", "#4575B4", "#74ADD1", "#ABD9E9", "white", "#FDAE61", "#F46D43", "#D73027", "#A50026"), -->
+<!--     limits = c(-1, 1), -->
+<!--     values = scales::rescale(c(-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1)) -->
+<!--   ), -->
+<!--   col_side_colors = tibble::tibble("<b>Column Names</b>" = md_df_bone %>% filter(tissue_celltype == "pellet") %>% pull(health_status)), -->
+<!--   col_side_palette = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"), -->
+<!--   hide_colorbar = FALSE, -->
+<!--   showticklabels = TRUE, -->
+<!--   Rowv = TRUE, -->
+<!--   Colv = TRUE, -->
+<!--   plot_method = "ggplot", -->
+<!--   scale = "none", -->
+<!--   subplot_widths = c(0.2, 0.3), -->
+<!--   subplot_heights = c(0.1, 0.02, 0.88), -->
+<!--   key.title = "Expression Z-Score\nRaw Counts Values", -->
+<!--   grid_color = "white", -->
+<!--   grid_width = 0.71, -->
+<!--   fontsize_row = 7, -->
+<!--   hclust_method = "mcquitty", -->
+<!--   main = "pellets non.sclerotic vs sclerotic", -->
+<!--   file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/50_heatmap_plotly.html" -->
+<!-- ) -->
+
+<!-- ``` -->
+
+<!-- # Norm counts -->
+<!-- ```{r} -->
+<!-- # Define the color palette -->
+<!-- my_palette <- rev(colorRampPalette(brewer.pal(11, "RdYlBu"))(256)) -->
+
+<!-- # Generate the heatmap -->
+<!-- heatmaply( -->
+<!--   norm_counts, -->
+<!--   scale_fill_gradient_fun = scale_fill_gradientn( -->
+<!--     colours = c("#313695", "#4575B4", "#74ADD1", "#ABD9E9", "white", "#FDAE61", "#F46D43", "#D73027", "#A50026"), -->
+<!--     limits = c(-1, 1), -->
+<!--     values = scales::rescale(c(-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1)) -->
+<!--   ), -->
+<!--   col_side_colors = tibble::tibble("<b>Column Names</b>" = md_df_bone %>% filter(tissue_celltype == "pellet") %>% pull(health_status)), -->
+<!--   col_side_palette = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"), -->
+<!--   hide_colorbar = FALSE, -->
+<!--   showticklabels = TRUE, -->
+<!--   Rowv = TRUE, -->
+<!--   Colv = TRUE, -->
+<!--   plot_method = "ggplot", -->
+<!--   scale = "none", -->
+<!--   subplot_widths = c(0.2, 0.3), -->
+<!--   subplot_heights = c(0.1, 0.02, 0.88), -->
+<!--   key.title = "Expression Z-Score\nNormalized Counts Values", -->
+<!--   grid_color = "white", -->
+<!--   grid_width = 0.71, -->
+<!--   fontsize_row = 7, -->
+<!--   hclust_method = "mcquitty", -->
+<!--   main = "pellets non.sclerotic vs sclerotic", -->
+<!--   file = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/Norm_50_heatmap_plotly.html" -->
+<!-- ) -->
+
+<!-- ``` -->
+<!-- # Raw counts pheatmap -->
+<!-- ```{r} -->
+<!-- library(ComplexHeatmap) -->
+<!-- library(pheatmap) -->
+<!-- library(svglite) -->
+<!-- library(dplyr) -->
+
+<!-- # Calculate Pearson correlation distance -->
+<!-- distance.row <- as.dist(1 - cor(t(raw_counts))) -->
+<!-- distance.col <- as.dist(1 - cor(raw_counts)) -->
+
+<!-- # Perform average linkage clustering -->
+<!-- cluster.row <- hclust(distance.row, method = "average") -->
+<!-- cluster.col <- hclust(distance.col, method = "average") -->
+
+<!-- # Prepare annotation data -->
+<!-- annotation_col <- as.data.frame(colnames(raw_counts)) -->
+<!-- colnames(annotation_col) <- "sample" -->
+<!-- annotation_col$sample_2 <- annotation_col$sample -->
+
+<!-- # Split the sample names into components -->
+<!-- annotation_col <- annotation_col %>% -->
+<!--   separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_") -->
+<!-- annotation_col <- annotation_col %>% select(-ID, -tissue, -type) -->
+
+<!-- # Merge with metadata -->
+<!-- annotation_col <- annotation_col |>  -->
+<!--   dplyr::left_join(md_df_bone  |>  filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID")) -->
+
+<!-- # Select relevant columns -->
+<!-- annotation_col <- annotation_col |> dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender) -->
+
+<!-- rownames(annotation_col) <- colnames(raw_counts) -->
+
+
+
+
+<!-- # Define color palette -->
+<!-- my_palette <- colorRampPalette(rev(brewer.pal(n = 58, name = "RdYlBu")))(256) -->
+
+<!-- # Define annotation colors -->
+<!-- annotation_colors <- list( -->
+<!--   condition = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"), -->
+<!--   #Plate.ID_tissue = c("plate 1_tibia" = "#1f78b4", "plate 2_tibia" = "#33a02c", "plate 3_hip" = "#e31a1c"), -->
+<!--   Gender = c("M" = "#a6cee3", "F" = "#fb9a99") -->
+<!-- ) -->
+
+<!-- # Print annotation_colors for debugging -->
+<!-- print(annotation_colors) -->
+
+<!-- # Generate the heatmap -->
+<!-- pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- pheatmap( -->
+<!--   raw_counts, -->
+<!--   scale = "row", -->
+<!--   cluster_rows = cluster.row, -->
+<!--   cluster_cols = cluster.col, -->
+<!--   cellwidth = 12, -->
+<!--   cellheight = 9, -->
+<!--   breaks = seq(-1, 1, length.out = 101), -->
+<!--   annotation_col = annotation_col, -->
+<!--   annotation_colors = annotation_colors, -->
+<!--   filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_pearson_corr_and_linkage_100_genes.png" -->
+<!-- ) -->
+
+<!-- # Display the heatmap -->
+<!-- pheatmap_raw_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic -->
+
+<!-- ``` -->
+<!-- # TODO change to logcpm -->
+<!-- # Norm counts pheatmap -->
+<!-- ```{r} -->
+<!-- library(ComplexHeatmap) -->
+<!-- library(pheatmap) -->
+<!-- library(svglite) -->
+<!-- library(dplyr) -->
+
+<!-- # Calculate Pearson correlation distance -->
+<!-- distance.row <- as.dist(1 - cor(t(norm_counts))) -->
+<!-- distance.col <- as.dist(1 - cor(norm_counts)) -->
+
+<!-- # Perform average linkage clustering -->
+<!-- cluster.row <- hclust(distance.row, method = "average") -->
+<!-- cluster.col <- hclust(distance.col, method = "average") -->
+
+<!-- # Prepare annotation data -->
+<!-- annotation_col <- as.data.frame(colnames(norm_counts)) -->
+<!-- colnames(annotation_col) <- "sample" -->
+<!-- annotation_col$sample_2 <- annotation_col$sample -->
+
+<!-- # Split the sample names into components -->
+<!-- annotation_col <- annotation_col %>% -->
+<!--   separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_") -->
+<!-- annotation_col <- annotation_col %>% select(-ID, -tissue, -type) -->
+
+<!-- # Merge with metadata -->
+<!-- annotation_col <- annotation_col %>% -->
+<!--   dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID")) -->
+
+<!-- # Select relevant columns -->
+<!-- annotation_col <- annotation_col %>% dplyr::select(condition, Gender,)#Plate.ID_tissue, Age, Gender) -->
+
+<!-- rownames(annotation_col) <- colnames(norm_counts) -->
+
+
+
+
+<!-- # Define color palette -->
+<!-- my_palette <- colorRampPalette(rev(brewer.pal(n = 58, name = "RdYlBu")))(256) -->
+
+<!-- # Define annotation colors -->
+<!-- annotation_colors <- list( -->
+<!--   condition = c("non.sclerotic" = "#E69F00", "sclerotic" = "#0673B3"), -->
+<!--   #Plate.ID_tissue = c("plate 1_tibia" = "#1f78b4", "plate 2_tibia" = "#33a02c", "plate 3_hip" = "#e31a1c"), -->
+<!--   Gender = c("M" = "#a6cee3", "F" = "#fb9a99") -->
+<!-- ) -->
+
+<!-- # Print annotation_colors for debugging -->
+<!-- print(annotation_colors) -->
+
+<!-- # Generate the heatmap -->
+<!-- pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- pheatmap( -->
+<!--   norm_counts, -->
+<!--   scale = "row", -->
+<!--   cluster_rows = cluster.row, -->
+<!--   cluster_cols = cluster.col, -->
+<!--   cellwidth = 12, -->
+<!--   cellheight = 9, -->
+<!--   breaks = seq(-1, 1, length.out = 101), -->
+<!--   annotation_col = annotation_col, -->
+<!--   annotation_colors = annotation_colors, -->
+<!--   filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets/Heatmaps/pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_pearson_corr_and_linkage_100_genes.png" -->
+<!-- ) -->
+
+<!-- # Display the heatmap -->
+<!-- pheatmap_norm_counts_pellets_hip_and_tibia_sclerotic_vs_non_sclerotic -->
+
+<!-- ``` -->
+
+#==================================
+# Above heatmap, use logcpm! for desired comparison DEG 
+#==================================
+
+
+#=================================
+# Below to RF RF RF, is the old RANDOM forest code ideas.
+#==========================================
+<!-- # Model, try to predict condition (non.sclerotic vs sclerotic) using a model and the metadata. -->
+<!-- # Randomforest first attempt -->
+<!-- ```{r,fig.height=4, fig.width=6} -->
+<!-- library(randomForest) -->
+<!-- library(caret) -->
+
+
+<!-- library(heatmaply) -->
+<!-- library(dplyr) -->
+<!-- library(RColorBrewer) -->
+
+<!-- # Prepare the data, we take either the top DEG or the most variable genes, or an intersection of those two. -->
+<!-- #pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |>  -->
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table |> -->
+<!--   mutate(gene_type = case_when( -->
+<!--     logFC >= 1 & FDR < 0.05 ~ "up", -->
+<!--     logFC <= -1 & FDR < 0.05 ~ "down", -->
+<!--     TRUE ~ "ns")) |> -->
+<!--   filter(genes != "") |> #, -->
+<!--          #FDR < 0.05) |>  -->
+<!--   arrange(FDR) |> -->
+<!--   slice_head(n = 500) #get top 500 DEG genes -->
+
+
+<!-- # Prepare the dataset v2, select the most variable genes (top 1k): Variance-based selection (remove low-variance genes) use the normalized counts, so technical variability is removed. -->
+
+<!-- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix -->
+<!-- # norm_matrix <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix -->
+<!-- # # Calculate variance for each gene (row) -->
+<!-- # gene_variances <- apply(norm_matrix, 1, var, na.rm = TRUE) -->
+<!-- #  -->
+<!-- # # Get the names of the top 2000 most variable genes -->
+<!-- # top_1k_genes <- names(sort(gene_variances, decreasing = TRUE)[1:1000]) -->
+<!-- #  -->
+<!-- # # Extract the subset matrix with only the top 1k most variable genes -->
+<!-- # top_1k_matrix <- norm_matrix[top_1k_genes, ] -->
+<!-- # # Check dimensions -->
+<!-- # dim(top_1k_matrix)  # Should be [2000, number_of_samples] -->
+<!-- #  -->
+<!-- # # Optional: View the variance distribution -->
+<!-- # summary(gene_variances) -->
+<!-- # hist(gene_variances, main = "Distribution of Gene Variances", xlab = "Variance") -->
+<!-- #  -->
+
+<!-- gene_vars <- apply(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix,1 , var, na.rm = TRUE) -->
+<!-- top_var_genes <- names(sort(gene_vars, decreasing = TRUE)[1:1000])  # Top 1000 most variable -->
+
+
+<!-- # Prepare the top 1000 variable genes and the top 500 DEG. -->
+<!-- # Combine approaches - intersection of variable and significant genes -->
+<!-- selected_genes <- intersect(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes) -->
+<!-- if(length(selected_genes) < 500) { -->
+<!--   # If intersection is too small, take union but limit to reasonable number -->
+<!--   selected_genes <- union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)#[1:min(1000, length(union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)))] -->
+<!-- } -->
+<!-- # Return all the unique values among both sides. -->
+<!-- length(union(top_var_genes, pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes)) -->
+
+<!-- ########################################################################################################### -->
+<!-- # USE Normalized TMM data for RANDOM FOREST with the 1000 most variable genes and the top 500 DEG, union. # -->
+<!-- ################################################################################################## -->
+
+
+
+<!-- # # Prepare the raw counts matrix -->
+<!-- # raw_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap |>  -->
+<!-- #   #select(starts_with("X"), genes) |>  -->
+<!-- #   select(genes) |>  -->
+<!-- #   # left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$colsums_samples, by = "genes") %>% -->
+<!-- #   left_join(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$colsums_samples, by = "genes") |>  -->
+<!-- #  -->
+<!-- #   select(starts_with("X")) |>  -->
+<!-- #   as.matrix() -->
+<!-- #  -->
+<!-- # rownames(raw_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes -->
+
+
+
+<!-- # Prepare the normalized counts matrix -->
+<!-- # norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$normalized_matrix) -->
+<!-- # norm_counts_df <- as.data.frame(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix) -->
+<!-- # norm_counts_df$genes <- rownames(norm_counts_df) -->
+<!-- #dim(norm_counts_df) -->
+<!-- #selected_genes <-data.frame(selected_genes,column="genes") -->
+<!-- norm_counts <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$normalized_matrix[selected_genes,] -->
+<!--   # select(starts_with("X")) |>  -->
+<!--   # as.matrix() -->
+<!-- #rownames(norm_counts) <- pellets_hip_and_tibia_sclerotic_vs_non_sclerotic_heatmap$genes -->
+<!-- norm_counts <- na.omit(norm_counts) -->
+<!-- dim(norm_counts) -->
+
+
+
+
+<!-- # Prepare annotation data -->
+<!-- annotation_col <- as.data.frame(colnames(norm_counts)) -->
+<!-- colnames(annotation_col) <- "sample" -->
+<!-- annotation_col$sample_2 <- annotation_col$sample -->
+
+<!-- # Split the sample names into components -->
+<!-- annotation_col <- annotation_col |>  -->
+<!--   separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_") -->
+
+
+<!-- #################################################################################################### -->
+<!-- # # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     # -->
+<!-- #################################################################################################### -->
+<!-- # annotation_col <- annotation_col |> -->
+<!-- #   left_join(oarsi_data_scores,by = c("ID" = "sampleID")) |> -->
+<!-- #   mutate(oarsi = as.numeric(oarsi)) |> -->
+<!-- #   mutate(oarsi = if_else(is.na(oarsi), 0, oarsi)) -->
+<!-- #  -->
+
+<!-- # Add BMI,Age to samples -->
+<!-- annotation_col <- annotation_col |>  -->
+<!--   # left_join(md_df[md_df$tissue_celltype_lowercase == "pellet",] [,c("sampleID","Plate.ID","nanodrop","a260.230","RIN...24","Age","Gender","BMI","Row.y","Column.y","sample_number")],by =c("sample_2"="sampleID")) -->
+<!--   dplyr::left_join(md_df[,c("sampleID","Age","Gender","BMI")],by = c("sample_2"="sampleID")) -->
+
+<!-- annotation_col <- annotation_col %>% select(-ID, -tissue, -type, -sample_2,) -->
+
+<!-- # # Merge with metadata -->
+<!-- # annotation_col <- annotation_col %>% -->
+<!-- #   dplyr::left_join(md_df_bone %>% filter(tissue_celltype == "pellet"), by = c("sample_2" = "sampleID")) -->
+<!-- #  -->
+<!-- # # Select relevant columns -->
+<!-- # annotation_col <- annotation_col %>% dplyr::select(condition, Gender, oarsi,BMI )#Plate.ID_tissue, Age, Gender)barcodePlate.ID, X260.230.value..Nanodrop.,Concentration..ng.µL -->
+<!-- #  -->
+<!-- # rownames(annotation_col) <- colnames(norm_counts) -->
+
+
+
+
+<!-- #combined_data <- cbind(t(raw_counts), annotation_col) -->
+<!-- combined_data <- cbind(t(norm_counts), annotation_col) -->
+
+<!-- #combined_data[,ncol(combined_data)] -->
+<!-- # NO  -->
+<!-- # NA VALUES NOT ALLOWED -->
+
+
+<!-- # Alternatively, you can remove rows with missing values -->
+<!-- # chec if any na.. -->
+<!-- any(is.na(combined_data)) -->
+<!-- sum(is.na(combined_data)) -->
+<!-- combined_data <- na.omit(combined_data) -->
+<!-- dim(combined_data) -->
+<!-- #column_to_remove <- "MAMDC2-AS1" -->
+<!-- # combined_data <- combined_data %>% select(-all_of(column_to_remove)) -->
+<!-- # Replace all hyphens with dots in column names -->
+<!-- colnames(combined_data) <- gsub("-", ".", colnames(combined_data)) -->
+<!-- # combined_data <- combined_data %>% select(-matches("AS1$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("AS2$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("IT1$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("EGLN2$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("-3$")) -->
+<!-- dim(combined_data) -->
+
+
+
+<!-- # ### Solve the issue with too many columns.... of the genes.... -->
+<!-- # combined_data <- combined_data[,c(1:5000,ncol(combined_data),(ncol(combined_data)-1),(ncol(combined_data)-2),(ncol(combined_data)-3))] -->
+
+
+<!-- # Ensure the condition column is a factor -->
+<!-- combined_data$condition <- factor(combined_data$condition) -->
+<!-- #combined_data$oarsi <- as.factor(combined_data$oarsi) -->
+<!-- # Split the data into training and testing sets -->
+<!-- set.seed(123) # For reproducibility -->
+<!-- trainIndex <- caret::createDataPartition(combined_data$condition, p = .7,  -->
+<!--                                   list = FALSE,  -->
+<!--                                   times = 1) -->
+<!-- train_data <- combined_data[trainIndex, ] -->
+<!-- test_data <- combined_data[-trainIndex, ] -->
+
+<!-- # Train a Random Forest model, using oarsi in the data -->
+<!-- rf_model <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000) -->
+
+<!-- # Predict on the test data -->
+<!-- predictions <- predict(rf_model, test_data) -->
+
+<!-- # Evaluate the model -->
+<!-- caret::confusionMatrix(predictions, test_data$condition) -->
+
+<!-- # Feature importance -->
+<!-- randomForest::importance(rf_model)[order(randomForest::importance(rf_model)[,4],decreasing = TRUE),] -->
+<!-- randomForest::varImpPlot(rf_model) -->
+
+<!-- # Get importance scores -->
+<!-- importance_scores <- importance(rf_model) -->
+<!-- head(importance_scores[order(importance_scores[,1], decreasing = TRUE), ]) -->
+
+<!-- print(rf_model) -->
+<!-- ``` -->
+
+<!-- # Accuracy, features that hurt the most the model when removed (very important for the decissions) -->
+<!-- # Gini, features that separate the best our classes. -->
+
+
+<!-- ```{r} -->
+<!-- # Get top 10 most important features -->
+<!-- top_10_features <- rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)[1:10]] -->
+
+<!-- cat("Top 10 most important features for predicting sclerosis:\n") -->
+<!-- for(i in 1:10) { -->
+<!--   feature <- top_10_features[i] -->
+<!--   importance_val <- round(importance_scores[feature, 1], 3) -->
+<!--   cat(i, ".", feature, "- Importance:", importance_val, "\n") -->
+<!-- } -->
+
+<!-- # Check if clinical features are important -->
+<!-- clinical_features <- c("BMI", "Age", "Gender") -->
+<!-- clinical_ranks <- sapply(clinical_features, function(x) { -->
+<!--   which(rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)] == x) -->
+<!-- }) -->
+<!-- cat("\nClinical feature rankings:\n") -->
+<!-- print(clinical_ranks) -->
+<!-- ``` -->
+
+<!-- # RF model with OARSI samples. (OLD) go at the end -->
+
+<!-- ```{r} -->
+<!-- #################################################################################################### -->
+<!-- # # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     # -->
+<!-- #################################################################################################### -->
+<!-- ## Load metadata of image scoring -->
+
+<!-- .libPaths("/home/mbotos/CLUSTER/RLibs/") -->
+<!-- library(readxl) -->
+<!-- sclerotic_scores <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "SC") -->
+<!-- non_sclerotic_scores <- readxl::read_xlsx("/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx",sheet = "NS ") -->
+<!-- #Oarsi scoring -->
+<!-- # 0 Normal -->
+<!-- # 1 Small -->
+<!-- # 2 Supeficial -->
+<!-- # 3 25% arthrosis damage to the joint -->
+<!-- # 4 50 % -->
+<!-- # 5 75 % -->
+<!-- # 6 >75% -->
+<!-- ``` -->
+<!-- # Use the features of inflammation, cysts... and so on not only the final oarsi score. oabs --> predictive score.. -->
+<!-- ```{r} -->
+
+<!-- ``` -->
+
+
+<!-- # Extract and add the scores to the samples that have it. -->
+<!-- ```{r} -->
+<!-- # Extract the row where 'oabs scoring' is 'OARSI scoring' -->
+<!-- non_sclerotic_scores_vec <- non_sclerotic_scores  |> -->
+<!--   dplyr::filter(`oabs scoring` == "OARSI scoring") |>  -->
+<!--   dplyr::select(where(is.numeric)) |>  -->
+<!--   unlist(use.names = FALSE) -->
+
+<!-- sclerotic_scores_vec <- sclerotic_scores  |> -->
+<!--   dplyr::filter(`oabs scoring` == "OARSI scoring") |>  -->
+<!--   dplyr::select(where(is.numeric)) |>  -->
+<!--   unlist(use.names = FALSE) -->
+
+<!-- names(non_sclerotic_scores) -->
+<!-- oarsi_data_scores <- data.frame(sampleID=paste0("X",names(non_sclerotic_scores)[2:length(names(non_sclerotic_scores))]),sclerotic_samples=sclerotic_scores_vec,non_sclerotic_samples=non_sclerotic_scores_vec) -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- # Prepare annotation data -->
+<!-- annotation_col <- as.data.frame(colnames(norm_counts)) -->
+<!-- colnames(annotation_col) <- "sample" -->
+<!-- annotation_col$sample_2 <- annotation_col$sample -->
+
+<!-- # Split the sample names into components -->
+<!-- annotation_col <- annotation_col |>  -->
+<!--   separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_") -->
+<!-- # Add BMI,Age to samples -->
+
+<!-- annotation_col_sc <- annotation_col |>  -->
+<!--   dplyr::filter(condition=="sclerotic") |>  -->
+<!--   dplyr::left_join(md_df |>  -->
+<!--               dplyr::filter(health_status == "sclerotic", -->
+<!--                      tissue_celltype_lowercase == "pellet") |>  -->
+<!--               dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"), -->
+<!--             by = c("sample_2"="sampleID")) -->
+
+<!-- annotation_col_sc -->
+<!-- annotation_col_sc <- annotation_col_sc |> -->
+<!--   dplyr::left_join(oarsi_data_scores |>  -->
+<!--               dplyr::select(-non_sclerotic_samples), -->
+<!--             by=c("ID"="sampleID")) -->
+<!-- annotation_col_sc -->
+<!-- # Select only samples containing oarsi scores -->
+<!-- annotation_col_sc <- annotation_col_sc |>  -->
+<!--   dplyr::filter(!is.na(sclerotic_samples)) -->
+<!-- annotation_col_sc -->
+
+
+
+
+
+
+<!-- annotation_col_nsc <- annotation_col |>  -->
+<!--   dplyr::filter(condition == "non.sclerotic") |>  -->
+<!--   dplyr::left_join(md_df |>  -->
+<!--               dplyr::filter(health_status == "non.sclerotic", -->
+<!--                      tissue_celltype_lowercase == "pellet") |>  -->
+<!--               dplyr::select("sampleID","Age","Gender","BMI"),#"Row.y","Column.y"),do not include position in the plate.. -->
+<!--             by = c("sample_2"="sampleID")) -->
+<!-- annotation_col_nsc -->
+
+<!-- annotation_col_nsc <- annotation_col_nsc |> -->
+<!--   dplyr::left_join(oarsi_data_scores |>  -->
+<!--               dplyr::select(-sclerotic_samples), -->
+<!--             by=c("ID"="sampleID")) -->
+<!-- annotation_col_nsc -->
+<!-- # Select only samples containing oarsi scores -->
+<!-- annotation_col_nsc <- annotation_col_nsc |>  -->
+<!--   dplyr::filter(!is.na(non_sclerotic_samples)) -->
+
+
+
+
+<!-- annotation_col_oarsi_samples <- dplyr::bind_rows(annotation_col_sc,annotation_col_nsc) -->
+<!-- annotation_col_oarsi_samples -->
+<!-- ``` -->
+
+<!-- ```{r,fig.height=4,fig.width=6} -->
+
+<!-- #df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b) -->
+<!-- annotation_col_oarsi_samples <- annotation_col_oarsi_samples |>  -->
+<!--   dplyr::mutate(oarsi_score = coalesce(sclerotic_samples,non_sclerotic_samples)) |>  -->
+<!--   dplyr::select(-sclerotic_samples,-non_sclerotic_samples) -->
+
+
+<!-- norm_counts_oarsi <-  norm_counts[,annotation_col_oarsi_samples$sample_2] -->
+<!-- combined_data <- cbind(t(norm_counts_oarsi), annotation_col_oarsi_samples) -->
+<!-- # NO -- NA -- VALUES NOT ALLOWED -->
+
+
+<!-- # Alternatively, you can remove rows with missing values -->
+<!-- # chec if any na.. -->
+<!-- any(is.na(combined_data)) -->
+<!-- sum(is.na(combined_data)) -->
+<!-- combined_data <- na.omit(combined_data) -->
+<!-- dim(combined_data) -->
+<!-- #column_to_remove <- "MAMDC2-AS1" -->
+<!-- # combined_data <- combined_data %>% select(-all_of(column_to_remove)) -->
+<!-- # Replace all hyphens with dots in column names -->
+<!-- colnames(combined_data) <- gsub("-", ".", colnames(combined_data)) -->
+<!-- # combined_data <- combined_data %>% select(-matches("AS1$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("AS2$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("IT1$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("EGLN2$")) -->
+<!-- # combined_data <- combined_data %>% select(-matches("-3$")) -->
+<!-- combined_data <- combined_data |>  select(-type,-sample_2,-tissue) -->
+<!-- dim(combined_data) -->
+
+
+
+<!-- # ### Solve the issue with too many columns.... of the genes.... -->
+<!-- # combined_data <- combined_data[,c(1:5000,ncol(combined_data),(ncol(combined_data)-1),(ncol(combined_data)-2),(ncol(combined_data)-3))] -->
+
+
+<!-- # Ensure the condition column is a factor -->
+<!-- combined_data$condition <- as.factor(combined_data$condition) -->
+<!-- combined_data$oarsi_score <- as.factor(combined_data$oarsi_score) -->
+<!-- combined_data$Age <- as.factor(combined_data$Age) -->
+<!-- combined_data$Gender <- as.factor(combined_data$Gender) -->
+<!-- combined_data$BMI <- as.factor(combined_data$BMI) -->
+<!-- #combined_data$Column.y <- as.factor(combined_data$Column.y) -->
+<!-- #combined_data$Row.y <- as.factor(combined_data$Row.y) -->
+<!-- colnames(combined_data) <- gsub("-", ".", colnames(combined_data)) -->
+
+<!-- #combined_data$oarsi <- as.factor(combined_data$oarsi) -->
+<!-- # Split the data into training and testing sets -->
+<!-- set.seed(123) # For reproducibility -->
+<!-- trainIndex <- caret::createDataPartition(combined_data$condition, p = .7,  -->
+<!--                                   list = FALSE,  -->
+<!--                                   times = 1) -->
+<!-- train_data <- combined_data[trainIndex, ] -->
+<!-- test_data <- combined_data[-trainIndex, ] -->
+<!-- # Train rf model, excluding oarsi scores and see how does it affect. -->
+<!-- # rf_model_oarsi <- randomForest::randomForest(condition ~ . - oarsi, data = train_data, importance = TRUE) -->
+<!-- # Keep oarsi -->
+<!-- rf_model_oarsi <- randomForest::randomForest(condition ~ ., data = train_data, importance = TRUE,ntree=10000) -->
+<!-- # Predict on the test data -->
+<!-- predictions <- predict(rf_model_oarsi, test_data) -->
+
+<!-- # Evaluate the model -->
+<!-- caret::confusionMatrix(predictions, test_data$condition) -->
+
+<!-- # Feature importance -->
+<!-- randomForest::importance(rf_model_oarsi) -->
+<!-- randomForest::varImpPlot(rf_model_oarsi) -->
+
+<!-- # Get importance scores -->
+<!-- importance_scores <- importance(rf_model_oarsi) -->
+<!-- head(importance_scores[order(importance_scores[,3], decreasing = TRUE), ]) -->
+
+<!-- print(rf_model) -->
+<!-- ``` -->
+<!-- ```{r,fig.width=6,fig.height=8} -->
+<!-- # Plot variable importance -->
+<!-- randomForest::varImpPlot(rf_model_oarsi, main = "Variable Importance") -->
+
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- # Get top 10 most important features -->
+<!-- top_10_features <- rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)[1:10]] -->
+
+<!-- cat("Top 10 most important features for predicting sclerosis:\n") -->
+<!-- for(i in 1:10) { -->
+<!--   feature <- top_10_features[i] -->
+<!--   importance_val <- round(importance_scores[feature, 1], 3) -->
+<!--   cat(i, ".", feature, "- Importance:", importance_val, "\n") -->
+<!-- } -->
+
+<!-- # Check if clinical features are important -->
+<!-- clinical_features <- c("BMI", "Age", "Gender","oarsi_score")#,"Row.y","Column.y") -->
+<!-- clinical_ranks <- sapply(clinical_features, function(x) { -->
+<!--   which(rownames(importance_scores)[order(importance_scores[,1], decreasing = TRUE)] == x) -->
+<!-- }) -->
+<!-- cat("\nClinical feature rankings:\n") -->
+<!-- print(clinical_ranks) -->
+<!-- ``` -->
+
+<!-- Gini: how goodd is the feature to split the trees...the highest the more important is the feature to obtain a pure split for the next decission. -->
+<!-- MeanDecrease Accuracy: how important is the feature that if removed the model performs worst, the higher the more important. -->
+
+<!-- ```{r,fig.width=6,fig.height=8} -->
+<!-- # Plot variable importance -->
+<!-- randomForest::varImpPlot(rf_model, main = "Variable Importance") -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Extract importance -->
+<!-- importance <- randomForest::importance(rf_model) -->
+<!-- importance_df <- data.frame(Feature = rownames(importance), Importance = importance[, "MeanDecreaseGini"]) -->
+
+<!-- # Plot top 20 important features -->
+<!-- top_features <- importance_df %>% top_n(20, Importance) -->
+<!-- ggplot(top_features, aes(x = reorder(Feature, Importance), y = Importance)) + -->
+<!--   geom_bar(stat = "identity") + -->
+<!--   coord_flip() + -->
+<!--   labs(title = "Top 20 Important Features", x = "Features", y = "Importance") -->
+
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- importance <- randomForest::importance(rf_model_oarsi) -->
+<!-- importance_df <- data.frame(Feature = rownames(importance), Importance = importance[, "MeanDecreaseGini"]) -->
+
+<!-- # Plot top 20 important features -->
+<!-- top_features <- importance_df %>% top_n(20, Importance) -->
+<!-- ggplot(top_features, aes(x = reorder(Feature, Importance), y = Importance)) + -->
+<!--   geom_bar(stat = "identity") + -->
+<!--   coord_flip() + -->
+<!--   labs(title = "Top 20 Important Features", x = "Features", y = "Importance") -->
+
+<!-- ``` -->
 
 # RF
 # RF on comparisons of interest
@@ -4698,7 +4712,9 @@ cat("- Perform functional enrichment analysis of top genes\n")
 cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 ```
 
+# RF
 # Hip pellet sclerotic vs non sclerotic RF.
+# RF
 ```{r,fig.height=5, fig.width=6}
 library(randomForest)
 library(heatmaply)
@@ -5212,8 +5228,10 @@ cat("- Perform functional enrichment analysis of top genes\n")
 cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 ```
 
+# RF
 ## Tibia
 # tibia adipocyte sclerotic vs non sclerotic RF.
+# RF
 ```{r,fig.height=5, fig.width=6}
 library(randomForest)
 library(heatmaply)
@@ -5726,8 +5744,9 @@ cat("- Perform functional enrichment analysis of top genes\n")
 cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 ```
 
-
+# RF
 # Tibia pellet sclerotic vs non sclerotic rf
+# RF
 ```{r,fig.height=5, fig.width=6}
 library(randomForest)
 library(heatmaply)
@@ -6242,8 +6261,10 @@ cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 
 
 
-
+## RF
+## OARSI FEATURES MODEL... but if the other samples lack the features in random forest not so soo good!
 # OARSI model and predict sclerotic and non-sclerotic, and get predictive genes!
+# RF
 ```{r}
 ####################################################################################################
 # # Add oarsi scores, non.sclerotic and sclerotic samples have the same score!!!!!!!!!!!!!!!!!     #
@@ -6305,6 +6326,7 @@ oarsi_data_scores
 
 # Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
 # GO RUN LINE "1660" to get all the samples normalized together.
+
 ```{r,fig.width=16,fig.height=55}
 # Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
 # run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
@@ -6612,8 +6634,9 @@ grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
 # ================================================================
 # Drop near zero value columns, even though we removed above low variable genes
 # ==================================================================
-library(caret)
-nzv <- nearZeroVar(train_data_clean, saveMetrics = TRUE)
+#unloadNamespace("caret")
+#library(caret)
+nzv <- caret::nearZeroVar(train_data_clean, saveMetrics = TRUE)
 drop_cols <- rownames(nzv)[nzv$nzv]
 train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_cols)]
 test_data_clean  <- test_data_clean[,  setdiff(names(test_data_clean), drop_cols)]
@@ -6646,13 +6669,13 @@ test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_
 # RANDOM FOREST MODEL TRAINING with patient-wise CV
 # ================================================================
 # 2A. Define patient-wise CV folds
-ctrl <- trainControl(
+ctrl <- caret::trainControl(
   method          = "cv",
   number          = 5,
   #index           = groupKFold(train_data_clean$patientID, k = 5),
-  index           = groupKFold(groupids, k = 5),
+  index           = caret::groupKFold(groupids, k = 5),
   classProbs      = TRUE,
-  summaryFunction = twoClassSummary,
+  summaryFunction = caret::twoClassSummary,
   savePredictions = "final"
 )
 
@@ -6666,7 +6689,8 @@ grid <- expand.grid(
 
 # 2C. Train with caret + ranger
 set.seed(456)
-rf_tuned <- train(
+
+rf_tuned <- caret::train(
   condition ~ .,
   data      = train_data_clean,
   method    = "ranger",
@@ -7221,9 +7245,46 @@ heatmap(cor_mat)
 ```
 
 
-# Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
-```{r}
 
+```{r}
+# Used samples for trainng rf_oarsi_model
+annotation_col_oarsi_samples$sample_2
+```
+
+
+# Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
+# Therefore impute the oarsi score column....
+# Use logcpm counts of the sample to predict.
+```{r}
+message("reset logcpm all samples, run...\n LINE 1663\n...")
+logcpm_all <- results$logcpm
+
+# Non oarsi samples 
+# impute oarsi_score, as it is missing from sample
+non_oarsi_samples_to_select <- md_df_bone$sampleID[!md_df_bone$sample_number %in% oarsi_data_scores$sampleID]
+colnames(logcpm_all)
+logcpm_non_oarsi <- logcpm_all[,non_oarsi_samples_to_select]
+dim(logcpm_non_oarsi)
+# Add metadata
+logcpm_non_oarsi_data <- t(logcpm_non_oarsi) |> as.data.frame() 
+logcpm_non_oarsi_data$sampleID <- rownames(logcpm_non_oarsi_data)
+logcpm_non_oarsi_data <- logcpm_non_oarsi_data |> dplyr::left_join(md_df_bone |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI")), by = "sampleID")
+logcpm_non_oarsi_data <-logcpm_non_oarsi_data |> dplyr::mutate(condition = health_status) |> dplyr::select(-health_status)
+
+
+logcpm_non_oarsi_data$oarsi_score <- mean(as.numeric(train_data_clean$oarsi_score), na.rm = TRUE)  # Or any other strategy
+
+logcpm_non_oarsi_data$oarsi_score <- factor(round(logcpm_non_oarsi_data$oarsi_score,digits = 0))
+
+# Define which columns in training data are genes
+gene_columns <- setdiff(names(train_data_clean), c("condition", "Age", "BMI", "Gender", "oarsi_score"))
+
+# Subset gene columns in new data
+colnames(logcpm_non_oarsi_data) <- gsub(x = colnames(logcpm_non_oarsi_data),pattern = "-",replacement = ".")
+logcpm_non_oarsi_data_test <- logcpm_non_oarsi_data[, c("Age","BMI","Gender","oarsi_score",gene_columns)]
+
+# Predict
+predicted_labels <- predict(rf_model, logcpm_non_oarsi_data_test)
 
 ```
 
