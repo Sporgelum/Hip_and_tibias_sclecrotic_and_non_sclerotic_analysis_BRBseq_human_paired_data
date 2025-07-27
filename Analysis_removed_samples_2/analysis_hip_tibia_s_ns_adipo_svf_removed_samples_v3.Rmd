@@ -7214,6 +7214,7 @@ heatmap(cor_mat)
 
 # Use data
 ```{r}
+
 ```
 
 # Get results
@@ -7362,49 +7363,129 @@ plot(roc_imp2,
 
 
 ####Neural network 
-# TODO
+library(caret)
+library(nnet)
+library(dplyr)
+
+# Step 1: Encode categorical predictors
+# Note: You can include all predictors except the target 'condition'
+dummies <- dummyVars(~ ., data = pp_train  |>  dplyr::select(-condition))
+pp_train_encoded <- predict(dummies, newdata = pp_train) |> as.data.frame()
+
+# Step 2: Add target back
+pp_train_encoded$condition <- factor(pp_train$condition)
+
+# Step 3: PCA on numeric predictors
+preproc <- preProcess(
+  pp_train_encoded[, setdiff(names(pp_train_encoded), "condition")],
+  method = "pca",
+  pcaComp = 50  # Tune this number based on explained variance or performance
+)
+#==============================
+# Visualze top 10 loadings 
+#===============================
+preproc$rotation
+# Get PCA rotation (loadings)
+loadings <- preproc$rotation  # matrix of feature loadings
+
+# Get absolute values and sort by contribution
+top_genes_pc1 <- sort(abs(loadings[, "PC1"]), decreasing = TRUE)[1:20]
+top_genes_pc2 <- sort(abs(loadings[, "PC2"]), decreasing = TRUE)[1:20]
+
+# Names of top contributing genes
+top_pc1_gene_names <- names(top_genes_pc1)
+top_pc2_gene_names <- names(top_genes_pc2)
+
+# Create barplots to visualize contributions
+par(mfrow = c(1,2))  # side-by-side plots
+
+barplot(top_genes_pc1,
+        names.arg = top_pc1_gene_names,
+        las = 2,
+        col = "skyblue",
+        main = "Top 20 Genes - PC1")
+
+barplot(top_genes_pc2,
+        names.arg = top_pc2_gene_names,
+        las = 2,
+        col = "lightgreen",
+        main = "Top 20 Genes - PC2")
+
+
+#=========================================================
+pp_train_reduced <- predict(preproc, pp_train_encoded)
+
+# Step 4: Add target variable back
+pp_train_reduced$condition <- factor(pp_train$condition)
+
+# Step 5: Train a neural network model
+set.seed(123)
+trcontrol <- trainControl(method = "cv", number = 5)
+tune_grid <- expand.grid(size = c(3, 5), decay = c(0.1, 0.01))
+
+mod_nnet <- train(
+  condition ~ .,
+  data = pp_train_reduced,
+  method = "nnet",
+  trControl = trcontrol,
+  tuneGrid = tune_grid,
+  trace = FALSE,
+  maxit = 500
+)
+
+# Step 6: Review model results
+print(mod_nnet)
+ 
+#============================================
+# Predic using the test data.
+#===========================================
+# Note: You can include all predictors except the target 'condition'
+dummies <- dummyVars(~ ., data = pp_test  |>  dplyr::select(-condition))
+pp_test_encoded <- predict(dummies, newdata = pp_test) |> as.data.frame()
+
+# Step 2: Add target back
+pp_test_encoded$condition <- factor(pp_test$condition)
+
+# Step 3: PCA on numeric predictors
+preproc <- preProcess(
+  pp_test_encoded[, setdiff(names(pp_test_encoded), "condition")],
+  method = "pca",
+  pcaComp = 50  # Tune this number based on explained variance or performance
+)
+
+# Step 2: Apply same PCA transformation
+pp_test_reduced <- predict(preproc, pp_test_encoded)
+
+# Step 3: Add condition back (optional — only if you want to evaluate performance)
+pp_test_reduced$condition <- factor(pp_test$condition)
+
+# Step 4: Predict using trained model
+preds <- predict(mod_nnet, newdata = pp_test_reduced)
+
+# Step 5: Evaluate performance
+confusionMatrix(preds, pp_test_reduced$condition)
+
+
+pred = predict(mod_nnet,pp_test_reduced,type="raw")
+pred.in.sample = predict(mod_nnet,pp_train_reduced,type="raw")
+mean(pred != pp_test_reduced$condition)
+mean(pred.in.sample != pp_train_reduced$condition)
 # 
-# trcontrol <- trainControl(
-#   method = "cv",
-#   number = 5,#changed to 5 from 20
-#   classProbs = TRUE)
+cMatrixNnet=confusionMatrix(pred,pp_test_reduced$condition)
+cMatrix=confusionMatrix(mod_nnet)
 # 
-# tune_grid <- expand.grid(
-#   size = (1),#changed from 3:8 #number if hidden neurons
-#   #decay = c(0.01,0.1,0.2))
-#   decay = c(1,10))
+plt <- as.data.frame(cMatrixNnet$table)
+ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
+  geom_tile() + geom_text(aes(label=round(Freq))) +
+  scale_fill_gradient(low="white", high="#009194") +
+  labs(x = "Prediction",y = "Reference")
 # 
-# set.seed(123)
-# mod_nnet = caret::train(condition~ .,
-#                         data=pp_train,
-#                         method = "nnet",
-#                         trControl = trcontrol,
-#                         tuneGrid = tune_grid,
-#                         trace = FALSE,
-#                         maxit = 500 )
-# plot(mod_nnet)
-# 
-# 
-# pred = predict(mod_nnet,pp_test,type="raw")
-# pred.in.sample = predict(mod_nnet,pp_train,type="raw")
-# mean(pred != pp_test$condition)
-# mean(pred.in.sample != pp_train$condition)
-# 
-# cMatrixNnet=confusionMatrix(pred,pp_test$condition)
-# #cMatrix=confusionMatrix(mod_nnet)
-# 
-# plt <- as.data.frame(cMatrixNnet$table)
-# ggplot(plt, aes(Prediction,Reference, fill= Freq)) +
-#   geom_tile() + geom_text(aes(label=round(Freq))) +
-#   scale_fill_gradient(low="white", high="#009194") +
-#   labs(x = "Prediction",y = "Reference")
-# 
-# results=t(cbind(RndFrst=cMatrixRF$overall,Nnet=cMatrixNnet$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
-results=t(cbind(RndFrst=cMatrixRF$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
+results=t(cbind(RndFrst=cMatrixRF$overall,Nnet=cMatrixNnet$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
+#results=t(cbind(RndFrst=cMatrixRF$overall,XGB=cMatrixXGB$overall,Rpart=cMatrixRpart$overall))
 
 
 
-#pltNnet <- as.data.frame(cMatrixNnet$table)
+pltNnet <- as.data.frame(cMatrixNnet$table)
 pltRF <- as.data.frame(cMatrixRF$table)
 pltRpart <- as.data.frame(cMatrixRpart$table)
 pltXGB <- as.data.frame(cMatrixXGB$table)
@@ -7412,7 +7493,7 @@ pltXGB <- as.data.frame(cMatrixXGB$table)
 
 
 
-#a= ggplot(pltNnet, aes(Prediction,Reference, fill= Freq)) +  geom_tile() + geom_text(aes(label=round(Freq))) +  scale_fill_gradient(low="white", high="#009194") +  labs(x = "Prediction",y = "Reference", title = "Rpart")
+a= ggplot(pltNnet, aes(Prediction,Reference, fill= Freq)) +  geom_tile() + geom_text(aes(label=round(Freq))) +  scale_fill_gradient(low="white", high="#009194") +  labs(x = "Prediction",y = "Reference", title = "Rpart")
 b=ggplot(pltRF, aes(Prediction,Reference, fill= Freq)) +
   geom_tile() + geom_text(aes(label=round(Freq))) +
   scale_fill_gradient(low="white", high="#009194") +
@@ -7424,8 +7505,10 @@ c=ggplot(pltRpart, aes(Prediction,Reference, fill= Freq)) +
 d=ggplot(pltXGB, aes(Prediction,Reference, fill= Freq)) +
   geom_tile() + geom_text(aes(label=round(Freq))) +
   scale_fill_gradient(low="white", high="#009194") +
-  labs(x = "Prediction",y = "Reference", title = "NNet")
+  labs(x = "Prediction",y = "Reference", title = "NNet on PCA reduced")
 
 
-grid.arrange(b,c,d)
+grid.arrange(a,b,c,d)
+#head(tail(colnames(pp_train)))
+
 ```
