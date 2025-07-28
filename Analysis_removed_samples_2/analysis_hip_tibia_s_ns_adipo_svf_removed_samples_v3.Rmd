@@ -6327,7 +6327,7 @@ oarsi_data_scores
 # Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
 # GO RUN LINE "1660" to get all the samples normalized together.
 
-```{r,fig.width=16,fig.height=55}
+```{r,fig.width=16,fig.height=95}
 # Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
 # run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
 
@@ -6345,7 +6345,9 @@ samples_to_select <- md_df_bone$sampleID[md_df_bone$sample_number %in% oarsi_dat
 logcpm_all <- logcpm_all[,samples_to_select]
 dim(logcpm_all)
 
-# Remove genes with low variance across all samples
+#=======================================================
+# Remove genes with low variance across all samples  (very important step)
+#======================================================
 var_filter <- apply(logcpm_all, 1, var) > 0.1
 logcpm_all_filtered <- logcpm_all[var_filter, ]
 dim(logcpm_all_filtered)
@@ -6556,22 +6558,27 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 
 # Train model
 ```{r}
-unloadNamespace("caret")
-unloadNamespace("recipes")
-unloadNamespace("ipred")
-unloadNamespace("prodlim")
-unloadNamespace("lava")
-unloadNamespace("survival")
-unloadNamespace("genefilter")
-unloadNamespace("ranger")
-unloadNamespace("Matrix")
-unloadNamespace("nlme")
+# unloadNamespace("caret")
+# unloadNamespace("recipes")
+# unloadNamespace("ipred")
+# unloadNamespace("prodlim")
+# unloadNamespace("lava")
+# unloadNamespace("survival")
+# unloadNamespace("genefilter")
+# unloadNamespace("ranger")
+# unloadNamespace("Matrix")
+# unloadNamespace("nlme")
+# 
+# unloadNamespace("edgeR")
+# unloadNamespace("locfit")
+# unloadNamespace("pdp")
+# 
+# unloadNamespace("lattice")
+#=========================================
+#Above is the right combination to get caret working without unloadnamespaces.... thats the right order... i had issues with lattice. Do not run if no issues with lattice or caret.
+#=========================
 
-unloadNamespace("edgeR")
-unloadNamespace("locfit")
-unloadNamespace("pdp")
 
-unloadNamespace("lattice")
 
 # unloadNamespace("caret")
 # unloadNamespace("VIM")
@@ -6596,9 +6603,7 @@ unloadNamespace("lattice")
 ```{r}
 library(caret)
 ```
-# Rerun after checking stabilization of oob errors --> with at least 7000 trees.
-# TODO here
-# check again top genes!
+
 ```{r}
 # ================================================================
 # TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
@@ -6741,7 +6746,7 @@ rf_tuned <- caret::train(
   metric    = "ROC",
   trControl = ctrl,
   tuneGrid  = grid,
-  num.trees = 1000,
+  num.trees = 8000,
   importance = 'impurity'
 )
 print(rf_tuned)
@@ -6792,7 +6797,7 @@ grid.arrange(p5, p6, ncol = 2)
 #==========================
 # Predict on test set
 # =========================
-pred_probs <- predict(rf_tuned, newdata = test_data_clean, type = "prob")
+pred_probs <- predict(rf_tuned, newdata = test_data_clean, type = "prob") #done on probabilities!
 roc_obj <- roc(response = test_data_clean$condition,
                predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class
 
@@ -6841,30 +6846,8 @@ importance_df_gini$Gene <- rownames(importance_df_gini)
 names(importance_df_gini)[1] <- "MeanDecreaseGini"
 
 
-# 3. Plot the top 20 most important genes
-p_importance_gini <- importance_df_gini |> 
-  # Arrange by importance and take the top 20
-  dplyr::arrange(desc(MeanDecreaseGini)) |> 
-  dplyr::slice_head(n = 20) |>
-  
-  # Plot
-  ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
-  geom_col(fill = "#2c7fb8", alpha = 0.9) +
-  coord_flip() +
-  labs(
-    title = "Top 20 Most Important Genes",
-    subtitle = "Based on Gini Impurity Decrease",
-    x = "Genes",
-    y = "Importance Score"
-  ) +
-  theme_minimal()
-
-print(p_importance_gini)
-
-
-
 # Plot 8: Top 20 Important Features - Mean Decrease Gini
-p7 <- importance_df_gini |>
+p7 <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini))|> 
   slice_head(n = 20) |>
   ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
   geom_col(fill = "darkgreen", alpha = 0.7) +
@@ -6889,7 +6872,7 @@ rf_tuned_accuracy <- train(
   metric    = "ROC",
   trControl = ctrl,
   tuneGrid  = grid,
-  num.trees = 1000,
+  num.trees = 8000,
   importance = 'permutation' #  This is the only change
 )
 
@@ -6902,7 +6885,7 @@ names(importance_df_accuracy)[1] <- "MeanDecreaseAccuracy"
 
 
 # Plot 8: Top 20 Important Features - Mean Decrease Accuracy
-p8 <- importance_df_accuracy |>
+p8 <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> 
   slice_head(n = 20) |>
   ggplot(aes(x = reorder(Gene, MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
   geom_col(fill = "steelblue", alpha = 0.7) +
@@ -6968,6 +6951,8 @@ ggplot(df, aes(x = Trees, y = OOB_Error)) +
        x = "Number of Trees", y = "OOB Error Rate") +
   theme_minimal()
 
+message("...OOB stabilization curve...")
+message("Set the ntrees to the value where the error stabilizes.")
 # ================================================================
 # VISUALIZATION 6: MULTIDIMENSIONAL SCALING (MDS) PLOT
 # ================================================================
@@ -6987,7 +6972,7 @@ rf_tuned_prox <- train(
   trControl = ctrl,
   # 'rf' only tunes mtry from your grid, so we specify it directly
   tuneGrid  = expand.grid(.mtry = c(22, 44, 89)), 
-  num.trees = 1000,
+  num.trees = 8000,
   proximity = TRUE,           #This is the key argument to add!
 )
 
@@ -7003,7 +6988,7 @@ train_predictions <- predict(rf_tuned_prox, train_data_clean)
 library(MASS)
 library(ggplot2)
 library(gridExtra)
-
+message("...MDS...")
 # MDS plot using proximity matrix, value of distances is more important than the "rank"  (better for interpretation)
 if (!is.null(rf_tuned_prox$finalModel$proximity)) {
   dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
@@ -7017,6 +7002,7 @@ if (!is.null(rf_tuned_prox$finalModel$proximity)) {
     Predicted = train_predictions
   )
   
+  message("...MDS METRIC GOODNESS-OF-FIT... \n...how much is the eigenvector representing and stretched from reallity...\n...if not 90% in first two MDS, data is stretched in many dimensions....")
   message(paste0("The goodness-of-fit (eigenvector pca-like) information caputed is: ", round(sum(mds_metric$GOF) / 2,digits = 3)*100,"%"))
   message(paste0("If goodness-of-fit caputed is < 90%\n check that other eigenvectors, contain more information so the first two dimensions are not enouhg\n...INTERPRET with caution... as it can be highly distorted"))
   message(paste0(" The remaining ",(100 - round(sum(mds_metric$GOF) / 2,digits = 3)*100),"% of the information is lost in the projection from high-dimensional space down to 2D"))
@@ -7074,7 +7060,7 @@ if (!is.null(rf_tuned_prox$finalModel$proximity)) {
 
 # Create heatmap of top important genes
 top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)  # Top 50 most important genes
-message(paste0("Top50 Gini features:",top_genes))
+message(cat("Top50 Gini features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -7117,7 +7103,7 @@ pheatmap(
 
 # Create heatmap of top important genes
 top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)# Top 50 most important genes
-message(paste0("Top50 Accuracy features:",top_genes))
+message(cat("Top50 Accuracy features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -7282,17 +7268,25 @@ table(test_data_clean$condition)
 
 ```{r}
 #oarsi_samples model
-saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/oarsi_samples_rf_model.rds")
+saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/oarsi_samples_rf_model_20250728.rds")
 
 ```
 
 # Check correlation of top50 genes (check for gini and accuracy)
 ```{r}
-cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
+#cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
+#Accuracy
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)
+cor_mat <- cor(train_data_clean[, top_genes[top_genes%in% colnames(train_data_clean)]])
+heatmap(cor_mat)
+
+#Gini
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)
+cor_mat <- cor(train_data_clean[, top_genes[top_genes%in% colnames(train_data_clean)]])
 heatmap(cor_mat)
 
 ```
-
+# some blocks that seem to correlate here.
 
 
 ```{r}
@@ -7305,7 +7299,8 @@ annotation_col_oarsi_samples$sample_2
 # Therefore impute the oarsi score column....
 # Use logcpm counts of the sample to predict.
 ```{r}
-message("reset logcpm all samples, run...\n LINE 1663\n...")
+message("reset logcpm all samples, run...\n LINE 1616\n...")
+#the result object shall contain all samples 
 logcpm_all <- results$logcpm
 
 # Non oarsi samples 
@@ -7314,35 +7309,130 @@ non_oarsi_samples_to_select <- md_df_bone$sampleID[!md_df_bone$sample_number %in
 colnames(logcpm_all)
 logcpm_non_oarsi <- logcpm_all[,non_oarsi_samples_to_select]
 dim(logcpm_non_oarsi)
+
 # Add metadata
 logcpm_non_oarsi_data <- t(logcpm_non_oarsi) |> as.data.frame() 
 logcpm_non_oarsi_data$sampleID <- rownames(logcpm_non_oarsi_data)
 logcpm_non_oarsi_data <- logcpm_non_oarsi_data |> dplyr::left_join(md_df_bone |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI")), by = "sampleID")
 logcpm_non_oarsi_data <-logcpm_non_oarsi_data |> dplyr::mutate(condition = health_status) |> dplyr::select(-health_status)
 
-
+#========================
+#Impute the oarsi score... to be able to use this model.. so use the mean...
+#=================================
 logcpm_non_oarsi_data$oarsi_score <- mean(as.numeric(train_data_clean$oarsi_score), na.rm = TRUE)  # Or any other strategy
-
 logcpm_non_oarsi_data$oarsi_score <- factor(round(logcpm_non_oarsi_data$oarsi_score,digits = 0))
+
+
 
 # Define which columns in training data are genes
 gene_columns <- setdiff(names(train_data_clean), c("condition", "Age", "BMI", "Gender", "oarsi_score"))
 
 # Subset gene columns in new data
 colnames(logcpm_non_oarsi_data) <- gsub(x = colnames(logcpm_non_oarsi_data),pattern = "-",replacement = ".")
-logcpm_non_oarsi_data_test <- logcpm_non_oarsi_data[, c("Age","BMI","Gender","oarsi_score",gene_columns)]
+logcpm_non_oarsi_data_test <- logcpm_non_oarsi_data[, c(gene_columns,"Age","BMI","Gender","oarsi_score")]
+```
 
+#Prediction of rest of samples!
+```{r}
+#==============================
 # Predict
-predicted_labels <- predict(rf_model, logcpm_non_oarsi_data_test)
-
+#==============================
+predicted_labels <- predict(rf_tuned, logcpm_non_oarsi_data_test) #type = response (majority of votes)  type = prob (highest probability)
+predicted_labels
 ```
 
 # Get results
 ```{r}
+# Load required packages
+#library(caret)
+#library(e1071)  # for confusionMatrix
+#library(pROC)
+
+# True and predicted labels
+true_labels <- factor(c(logcpm_non_oarsi_data$condition))  # Replace with your actual labels
+predicted_labels <- factor(predicted_labels, levels = levels(true_labels))
+
+# Confusion Matrix
+conf_matrix <- confusionMatrix(predicted_labels, true_labels)
+print(conf_matrix)
+
+# Extract metrics
+cat("\nAccuracy: Proportion of total correct predictions", conf_matrix$overall["Accuracy"], "\n")
+cat("Sensitivity (Recall): How well the model identifies actual positives.", conf_matrix$byClass["Sensitivity"], "\n")
+cat("Specificity:How well the model identifies actual negatives.", conf_matrix$byClass["Specificity"], "\n")
+cat("Precision (Pos Pred Value):How many predicted positives are actually positive.", conf_matrix$byClass["Pos Pred Value"], "\n")
+cat("F1 Score: Harmonic mean of precision and recall. It balances both.", 2 * ((conf_matrix$byClass["Sensitivity"] * conf_matrix$byClass["Pos Pred Value"]) /
+                     (conf_matrix$byClass["Sensitivity"] + conf_matrix$byClass["Pos Pred Value"])), "\n")
+
+# Plot 5: Confusion Matrix Heatmaps
+cm_df <- as.data.frame(conf_matrix$table)
+
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Rest Samples Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+# ROC
+```{r}
+# Binarize the labels for ROC (assuming binary classification)
+true_binary <- ifelse(true_labels == "sclerotic", 1, 0)
+pred_binary <- ifelse(predicted_labels == "sclerotic", 1, 0)
+
+# ROC Curve
+roc_obj <- roc(true_binary, pred_binary)
+plot(roc_obj, col = "orange", main = "ROC Curve")
+auc_value <- auc(roc_obj)
+cat("\nAUC:", auc_value, "\n")
+legend("bottomright", 
+         legend = c(paste("Rest of Samples AUC =", round(auc_value, 2))),
+         col = c("orange"), lwd = 2)
+  
+cat("AUC:", round(auc_value, 3), "\n")
+```
+# ROC Probabilities (which samples ge the highest?)
+```{r}
+pred_probs <- predict(rf_tuned, newdata = logcpm_non_oarsi_data_test, type = "prob") #done on probabilities!
+roc_obj <- roc(response = logcpm_non_oarsi_data$condition,
+               predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class (if value is higher in sclerotic is sclerotic)
+
+plot.roc(roc_obj, col = "red", print.auc = TRUE)
+
 ```
 
 
+
+
 ```{r}
+library(ggplot2)
+
+df <- data.frame(True_Label = true_labels,
+                 Predicted_Label = predicted_labels,
+                 SampleID = logcpm_non_oarsi_data$sampleID,
+                 Probability.Sclerotic = pred_probs$sclerotic,
+                 Probability.Non.Sclerotic = pred_probs$non.sclerotic,
+                 Predicted_Probability_Label = ifelse(pred_probs$sclerotic < pred_probs$non.sclerotic,"non.sclerotic","sclerotic"))
+
+df
+#df$Correct <- df$True_Label == df$Predicted_Label
+df$Correct_Probability_Label = df$Predicted_Probability_Label == logcpm_non_oarsi_data$condition
+df$Color <- ifelse(df$Correct, "green", "red")
+
+#ggplot(df, aes(x = SampleID, y = 1, fill = Correct)) +
+ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
+    geom_tile(color = "white") +
+    scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "red")) +
+    theme_minimal() +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.title = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1)) +
+    labs(title = "Sample Probability Classification Accuracy (Green = Correct, Red = Incorrect)")
+
+
 ```
 
 
@@ -7485,9 +7575,9 @@ plot(roc_imp2,
 #========================
 ####Neural network 
 #=======================
-library(caret)
+# library(caret)
 library(nnet)
-library(dplyr)
+# library(dplyr)
 
 # Step 1: Encode categorical predictors
 # Note: You can include all predictors except the target 'condition'
@@ -7778,5 +7868,18 @@ d=ggplot(pltXGB, aes(Prediction,Reference, fill= Freq)) +
 
 grid.arrange(a,b,c,d)
 #head(tail(colnames(pp_train)))
-
 ```
+
+# DONE
+```{r}
+#
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
