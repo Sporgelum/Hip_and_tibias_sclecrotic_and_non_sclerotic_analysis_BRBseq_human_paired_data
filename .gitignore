@@ -1,4 +1,5 @@
-!.Readme.md
+!README.md
+*.md
 *.RData
 *.Rhistory
 *.fastqz
