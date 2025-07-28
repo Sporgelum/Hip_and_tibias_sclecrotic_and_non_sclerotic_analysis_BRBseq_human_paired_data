@@ -1639,6 +1639,7 @@ for (column_to_plot in c(colnames(md_df_bone))) {
     )
 }
 
+results_all_samples <- results
 ```
 
 # horizontally in hip and tibia 
@@ -6329,10 +6330,14 @@ oarsi_data_scores
 
 ```{r,fig.width=16,fig.height=95}
 # Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
+
+#===========================================================================================================================================
 # run line 1630 --> results will use all the samples together to normalize the genes and select the 2000 HVG from all the samples together.
+#results_all_samples
+#===================================================================================================================================================
 
 
-logcpm_all <- results$logcpm
+logcpm_all <- results_all_samples$logcpm
 dim(logcpm_all)
 
 # Select samples that have the scores only
@@ -6746,7 +6751,7 @@ rf_tuned <- caret::train(
   metric    = "ROC",
   trControl = ctrl,
   tuneGrid  = grid,
-  num.trees = 8000,
+  num.trees = 10000,
   importance = 'impurity'
 )
 print(rf_tuned)
@@ -6872,7 +6877,7 @@ rf_tuned_accuracy <- train(
   metric    = "ROC",
   trControl = ctrl,
   tuneGrid  = grid,
-  num.trees = 8000,
+  num.trees = 10000,
   importance = 'permutation' #  This is the only change
 )
 
@@ -6897,7 +6902,7 @@ p8
 plot(importance_scores_acc, top = 20)
 
 
-grid.arrange(p7, p8, ncol = 1)
+grid.arrange(p7, p8, ncol = 2)
 
 
 # Plot importance using randomForest's built-in function
@@ -6972,7 +6977,7 @@ rf_tuned_prox <- train(
   trControl = ctrl,
   # 'rf' only tunes mtry from your grid, so we specify it directly
   tuneGrid  = expand.grid(.mtry = c(22, 44, 89)), 
-  num.trees = 8000,
+  num.trees = 10000,
   proximity = TRUE,           #This is the key argument to add!
 )
 
@@ -7301,7 +7306,8 @@ annotation_col_oarsi_samples$sample_2
 ```{r}
 message("reset logcpm all samples, run...\n LINE 1616\n...")
 #the result object shall contain all samples 
-logcpm_all <- results$logcpm
+#now saved to results_all_samples
+logcpm_all <- results_all_samples$logcpm
 
 # Non oarsi samples 
 # impute oarsi_score, as it is missing from sample
@@ -7419,6 +7425,8 @@ df <- data.frame(True_Label = true_labels,
 df
 #df$Correct <- df$True_Label == df$Predicted_Label
 df$Correct_Probability_Label = df$Predicted_Probability_Label == logcpm_non_oarsi_data$condition
+
+write.table(df,file = "trained_models_rf/results_prediction_rest_of_samples_with_rf_model.csv",sep = ",",row.names = TRUE,col.names = TRUE)
 df$Color <- ifelse(df$Correct, "green", "red")
 
 #ggplot(df, aes(x = SampleID, y = 1, fill = Correct)) +
