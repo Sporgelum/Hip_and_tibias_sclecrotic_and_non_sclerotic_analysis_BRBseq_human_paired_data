@@ -7444,44 +7444,7 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# TODO
-```{r}
-```
-
-# Separate HIP model --> other scores
-
-```{r}
-```
-
-
-# Separate TIBIA model --> other scores 
-```{r}
-
-```
-
-
-
-
-
-
-
-
-
-# Test for performance of other models.
+# Test other machine learning models performance.
 ```{r}
 train_data_clean[,(tail(colnames(train_data_clean)))]
 test_data_clean[,(tail(colnames(test_data_clean)))]
@@ -7907,6 +7870,1066 @@ d=ggplot(pltXGB, aes(Prediction,Reference, fill= Freq)) +
 grid.arrange(a,b,c,d)
 #head(tail(colnames(pp_train)))
 ```
+# All scored tibia samples .
+```{r}
+# ================================================================
+# 1. LOAD AND PREPARE ALL CLINICAL FEATURES
+# ================================================================
+
+# Load all sheets with ALL features (not just OARSI score)
+tibia_sc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx", sheet = "SC")
+tibia_nsc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi and oabs scoring .xlsx", sheet = "NS ")
+
+md_df_tibia
+
+```
+```{r}
+# ================================================================
+# EXTRACT AND MATCH OARSI SCORES FROM EXCEL TO METADATA
+# ================================================================
+tibia_nsc_clean <- tibia_nsc |> dplyr::filter(!is.na(`oabs scoring`)) |>  #& 'oabs scoring' != "NA") |>  need to use the column backticked... otehrwse takes it as a string with ''
+  dplyr::mutate(`oabs scoring` = ifelse(`oabs scoring` == "total", "oabs_scoring",`oabs scoring`)) |>
+  tidyr::pivot_longer(cols = !`oabs scoring`, names_to = "sample",values_to = "values") |>
+  dplyr::mutate(sample_number=paste0("X",sample),
+                features=`oabs scoring`) |> 
+  dplyr::mutate(features = gsub(" ", "_",tolower(features)))
+tibia_nsc_clean
+
+
+tibia_sc_clean <- tibia_sc |> dplyr::filter(!is.na(`oabs scoring`)) |> 
+  dplyr::mutate(`oabs scoring` = ifelse(`oabs scoring` == "total", "oabs_scoring",`oabs scoring`)) |> 
+  tidyr::pivot_longer(cols = !`oabs scoring`, names_to = "sample",values_to = "values") |> 
+  dplyr::mutate(sample_number=paste0("X",sample),
+                features=`oabs scoring`) |> 
+  dplyr::mutate(features = gsub(" ", "_",tolower(features)))
+tibia_sc_clean
+```
+
+```{r}
+# Back to wide
+tibia_sc_clean_wide <- tibia_sc_clean |> dplyr::select(sample_number, features, values) |> 
+  tidyr::pivot_wider(names_from = features, values_from = values)
+
+tibia_nsc_clean_wide <- tibia_nsc_clean |> dplyr::select(sample_number, features, values) |> 
+  tidyr::pivot_wider(names_from = features, values_from = values)
+
+
+```
+
+
+
+```{r}
+# Select only sclerotic samples from the md_df_tibia
+md_df_tibia_sclerotic <- md_df_tibia |> dplyr::filter(health_status == "sclerotic") |> 
+  dplyr::left_join(tibia_sc_clean_wide,by = "sample_number") |> 
+  dplyr::filter(!is.na(oarsi_scoring) & !is.na(cysts) & !is.na(inflammation))
+md_df_tibia_sclerotic
+
+
+md_df_tibia_non_sclerotic <- md_df_tibia |> dplyr::filter(health_status == "non.sclerotic") |> 
+  dplyr::left_join(tibia_nsc_clean_wide,by = "sample_number") |> 
+  dplyr::filter(!is.na(oarsi_scoring) & !is.na(cysts) & !is.na(inflammation))
+
+md_df_tibia_non_sclerotic
+
+```
+
+
+```{r}
+# Combine the tibia sclerotic and non sclerotic samples with extra features for the rf model...
+md_df_tibia_extended <- dplyr::bind_rows(md_df_tibia_sclerotic,md_df_tibia_non_sclerotic)
+md_df_tibia_extended
+```
+
+
+```{r}
+table(md_df_tibia_extended$health_status)
+```
+
+```{r}
+# ================================================================
+# PREPARE DATASETS FOR MODELING
+# ================================================================
+# Filter expression data
+logcpm_tibias <- tibia_sclerotic_vs_non_sclerotic$logcpm[,colnames(tibia_sclerotic_vs_non_sclerotic$logcpm) %in% md_df_tibia_extended$sampleID]
+dim(logcpm_tibias)
+head(logcpm_tibias)
+cat("Tibia expression samples:", ncol(logcpm_tibias), "\n")
+```
+
+```{r}
+# No need to run again limma as we have here already the F statistsic from the edgeR results.
+head(tibia_sclerotic_vs_non_sclerotic$d$design)
+top_f_genes <- tibia_sclerotic_vs_non_sclerotic$results$table |> 
+  dplyr::arrange(desc(F)) |> 
+  dplyr::slice_head(n=2000) |> 
+  tibble::rownames_to_column("gene")
+
+top_deg_genes <- tibia_sclerotic_vs_non_sclerotic$results$table |>
+  filter(!is.na(FDR)) |>               # ensure FDR exists
+  arrange(FDR) |>                      # sort by ascending FDR
+  slice_head(n = 500) |>              # take top 500
+  tibble::rownames_to_column("gene")
+
+
+library(dplyr)
+
+# Combine with tag column
+top_f_genes <- top_f_genes |> mutate(type = "Top_F_stat")
+top_deg_genes <- top_deg_genes |> mutate(type = "Top_FDR_DEG")
+
+combined <- bind_rows(top_f_genes, top_deg_genes)
+# Assuming both data frames have a column "gene"
+f_genes <- top_f_genes$gene
+deg_genes <- top_deg_genes$gene
+
+# Find overlaps
+overlap_genes <- intersect(f_genes, deg_genes)
+
+# Counts
+overlap_count <- length(overlap_genes)
+f_only_count <- length(setdiff(f_genes, deg_genes))
+deg_only_count <- length(setdiff(deg_genes, f_genes))
+
+# For pie chart: all distinct genes in both sets
+pie_data <- data.frame(
+  Category = c("Overlap", "F_only", "DEG_only"),
+  Count = c(overlap_count, f_only_count, deg_only_count))
+# Plot pie chart
+ggplot(pie_data, aes(x = "", y = Count, fill = Category)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  theme_void() +
+  labs(title = "Overlap of Top 2000 F Genes and Top 500 DEGs")
+
+# Subset your data
+selected_data <- logcpm_tibias[f_genes, ]
+dim(selected_data)
+############################################
+# we use the top_genes from edger here !   # already modeled using model.edeger =)
+############################################
+message("using edger top genes, modeled using ~0+patient+group, to extract the top 2k genes for RF,\nwhich overlap with the top 500 DEG completely.") 
+# Desired number of top genes (Here is: 2k)
+
+# quick visu sanity check to see selected genes separate.
+library(pheatmap)
+annotation_col <-  md_df_tibia_extended |>  dplyr::select(Group,sampleID) |> tibble::column_to_rownames("sampleID")
+
+#pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,# old f statistic pheatmap
+#pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
+pheatmap::pheatmap(mat = selected_data,
+                   annotation_col = annotation_col,
+                   scale = "column",
+                   fontsize = 10,              # Adjust font size for readability
+                   fontsize_row = 8,           # Smaller row labels if needed
+                   fontsize_col = 10,          # Column labels
+                   #cellwidth = 2,             # Adjust cell width
+                   #cellheight = 0.3             # Adjust cell height
+)
+
+
+```
+# Build RF model tibias and physiological scores 
+```{r}
+combined_data_tibias <- as.data.frame(t(selected_data)) |> tibble::rownames_to_column(var = "sampleID") |> dplyr::left_join(md_df_tibia_extended |>
+                                                                                                                              dplyr::select(sampleID,health_status,tissue_lowercase,
+                                                                                                                                            tissue_celltype_lowercase,Age,Gender,BMI,cysts,
+                                                                                                                                            fibrosis,blood_vessels,cartilage_islands,trabeculae_thickened,
+                                                                                                                                            tidemark_integrity,inflammation,oabs_scoring, oarsi_scoring),
+                                                                                                                            by = c("sampleID"))
+
+combined_data_tibias[,c("sampleID",tail(colnames(combined_data_tibias),20))]
+message("Very important to change gene names containig '-' to '.'")
+combined_data_tibias[grepl(pattern = "[A-Z]+\\-", x = colnames(combined_data_tibias))] # check if any dash present in the colnames
+colnames(combined_data_tibias) <- gsub("-", ".", colnames(combined_data_tibias))
+combined_data_tibias[grepl(pattern = "[A-Z]+\\.", x = colnames(combined_data_tibias))]
+
+
+
+# Ensure the condition column is a factor and the rest are correct!
+combined_data_tibias$cysts<- as.factor(combined_data_tibias$cysts)
+combined_data_tibias$fibrosis<- as.factor(combined_data_tibias$fibrosis)
+combined_data_tibias$blood_vessels<- as.factor(combined_data_tibias$blood_vessels)
+combined_data_tibias$cartilage_islands<- as.factor(combined_data_tibias$cartilage_islands)
+combined_data_tibias$trabeculae_thickened<- as.factor(combined_data_tibias$trabeculae_thickened)
+combined_data_tibias$tidemark_integrity<- as.factor(combined_data_tibias$tidemark_integrity)
+combined_data_tibias$inflammation<- as.factor(combined_data_tibias$inflammation)
+combined_data_tibias$oabs_scoring<- as.factor(combined_data_tibias$oabs_scoring)
+combined_data_tibias$oarsi_scoring<- as.factor(combined_data_tibias$oarsi_scoring)
+combined_data_tibias$condition <- factor(combined_data_tibias$health_status)
+combined_data_tibias$celltype <- factor(combined_data_tibias$tissue_celltype_lowercase)
+combined_data_tibias$Age <- as.numeric(combined_data_tibias$Age)
+combined_data_tibias$Gender <- factor(combined_data_tibias$Gender)
+combined_data_tibias$BMI <- as.numeric(combined_data_tibias$BMI)
+
+table(combined_data_tibias$sampleID,combined_data_tibias$oarsi_scoring)#could change the patients if interested to have in training the best combinations and see if t later performs in the test..
+# ================================================================
+# TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
+# ================================================================
+
+# Identify all unique patients in your dataset
+all_patients <- unique(md_df_tibia_extended$sample_number[md_df_tibia_extended$sampleID %in% combined_data_tibias$sampleID])
+head(all_patients)
+
+set.seed(123)
+train_proportion <- 0.8
+n_train <- round(length(all_patients) * train_proportion)
+train_patients <- sample(all_patients, n_train)
+test_patients  <- setdiff(all_patients, train_patients) #could change the patients if interested to have in training the best combinations and see if t later performs in the test..
+table(combined_data_tibias$sampleID,combined_data_tibias$oarsi_scoring)
+
+# Map patient IDs back to sample IDs
+training_samples <- md_df_tibia_extended$sampleID[md_df_tibia_extended$sample_number %in% train_patients]
+testing_samples  <- md_df_tibia_extended$sampleID[md_df_tibia_extended$sample_number %in% test_patients]
+
+# Subset combined_data into train/test
+train_data <- combined_data_tibias[combined_data_tibias$sampleID %in% training_samples, ]
+test_data  <- combined_data_tibias[combined_data_tibias$sampleID %in% testing_samples, ]
+
+# Drop rows with all NAs (if any)
+train_data_clean <- train_data[rowSums(is.na(train_data)) != ncol(train_data), ]
+test_data_clean  <- test_data[rowSums(is.na(test_data)) != ncol(test_data), ]
+
+cat("Training samples:", nrow(train_data_clean), "\n")
+cat("Test samples:    ", nrow(test_data_clean),  "\n")
+cat("Training patients:", length(train_patients), "\n")
+cat("Test patients:    ", length(test_patients),  "\n")
+
+# ================================================================
+# VISUALIZATION 1: DATA OVERVIEW AND QUALITY CHECK
+# ================================================================
+
+# Plot 1: Sample distribution
+p1 <- ggplot(combined_data_tibias, aes(x = condition, fill = condition)) +
+  geom_bar(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Sample Distribution by Condition",
+       x = "Condition", y = "Number of Samples") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 2: Age distribution by condition
+p2 <- ggplot(combined_data_tibias, aes(x = condition, y = Age, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Age Distribution by Condition",
+       x = "Condition", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 3: BMI distribution by condition
+p3 <- ggplot(combined_data_tibias, aes(x = condition, y = BMI, fill = condition)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "BMI Distribution by Condition",
+       x = "Condition", y = "BMI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plot 4: Gender distribution
+p4 <- ggplot(combined_data, aes(x = condition, fill = Gender)) +
+  geom_bar(position = "dodge", alpha = 0.7) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Gender Distribution by Condition",
+       x = "Condition", y = "Count") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+
+# ================================================================
+# Drop near zero value columns, even though we removed above low variable genes
+# ==================================================================
+#unloadNamespace("caret")
+#library(caret)
+nzv <- caret::nearZeroVar(train_data_clean, saveMetrics = TRUE)
+drop_cols <- rownames(nzv)[nzv$nzv]
+train_data_clean <- train_data_clean[, setdiff(names(train_data_clean), drop_cols)]
+test_data_clean  <- test_data_clean[,  setdiff(names(test_data_clean), drop_cols)]
+
+head(train_data_clean[,c("sampleID",tail(colnames(train_data_clean),15))])
+# ================================================================
+# ADD patientID for grouping only (will be excluded from model)
+# ================================================================
+train_data_clean$patientID <- factor(gsub("_.*", "", train_data_clean$sampleID))
+test_data_clean$patientID  <- factor(gsub("_.*", "", test_data_clean$sampleID))
+
+groupids <- train_data_clean$patientID
+
+drop_cols <- c("sampleID", "health_status", "tissue_celltype_lowercase", "celltype", "patientID")
+train_data_clean <- train_data_clean[, !(names(train_data_clean) %in% drop_cols)]
+test_data_clean  <- test_data_clean[, !(names(test_data_clean) %in% drop_cols)]
+
+train_data_clean[,(tail(colnames(train_data_clean),15))]
+test_data_clean[,(tail(colnames(test_data_clean),15))]
+non_numeric_cols = c("condition","Gender","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")
+
+train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
+test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
+
+
+
+
+
+# ================================================================
+# RANDOM FOREST MODEL TRAINING with patient-wise CV
+# ================================================================
+# 2A. Define patient-wise CV folds
+ctrl <- caret::trainControl(
+  method          = "cv",
+  number          = 5,
+  #index           = groupKFold(train_data_clean$patientID, k = 5),
+  index           = caret::groupKFold(groupids, k = 5),
+  classProbs      = TRUE,
+  summaryFunction = caret::twoClassSummary,
+  savePredictions = "final"
+)
+
+# 2B. Tuning grid
+p <- ncol(train_data_clean) - 1  # minus response
+grid <- expand.grid(
+  mtry         = floor(sqrt(p)) * c(0.5, 1, 2),
+  splitrule    = "gini",
+  min.node.size= c(1, 5, 10)
+)
+
+# 2C. Train with caret + ranger
+set.seed(456)
+
+rf_tuned <- caret::train(
+  condition ~ .,
+  data      = train_data_clean,
+  method    = "ranger",
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneGrid  = grid,
+  num.trees = 2000,           #stabilzes around 2k trees,
+  importance = 'impurity'
+)
+print(rf_tuned)
+plot(rf_tuned)
+
+
+# ================================================================
+# VISUALIZATION 2: MODEL PERFORMANCE
+# ================================================================
+# Predictions
+train_predictions <- predict(rf_tuned, train_data_clean)#, type = "response")
+test_predictions <- predict(rf_tuned, test_data_clean)#, type = "response")
+
+train_probs <- predict(rf_tuned, train_data_clean, type = "prob")
+test_probs <- predict(rf_tuned, test_data_clean, type = "prob")
+
+# Confusion Matrices
+train_cm <- caret::confusionMatrix(train_predictions, train_data_clean$condition)
+test_cm <- caret::confusionMatrix(test_predictions, test_data_clean$condition)
+
+print("Training Set Performance:")
+print(train_cm)
+print("\nTest Set Performance:")
+print(test_cm)
+
+# Plot 5: Confusion Matrix Heatmaps
+train_cm_df <- as.data.frame(train_cm$table)
+test_cm_df <- as.data.frame(test_cm$table)
+
+p5 <- ggplot(train_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Training Set Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+p6 <- ggplot(test_cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Test Set Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+
+grid.arrange(p5, p6, ncol = 2)
+
+#==========================
+# Predict on test set
+# =========================
+pred_probs <- predict(rf_tuned, newdata = test_data_clean, type = "prob") #done on probabilities!
+roc_obj <- roc(response = test_data_clean$condition,
+               predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class
+
+plot.roc(roc_obj, col = "red", print.auc = TRUE)
+
+
+# ================================================================
+# VISUALIZATION 3: ROC CURVES AND AUC
+# ================================================================
+
+# ROC Analysis
+if(ncol(train_probs) >= 2) {
+  # Training ROC
+  train_roc <- roc(train_data_clean$condition, train_probs[,2])
+  test_roc <- roc(test_data_clean$condition, test_probs[,2])
+  
+  # Plot ROC curves
+  plot(train_roc, main = "ROC Curves Comparison", 
+       col = "blue", lwd = 2)
+  plot(test_roc, add = TRUE, col = "red", lwd = 2)
+  legend("bottomright", 
+         legend = c(paste("Training AUC =", round(train_roc$auc, 3)),
+                   paste("Test AUC =", round(test_roc$auc, 3))),
+         col = c("blue", "red"), lwd = 2)
+  
+  cat("Training AUC:", round(train_roc$auc, 3), "\n")
+  cat("Test AUC:", round(test_roc$auc, 3), "\n")
+}
+
+# ================================================================
+# VISUALIZATION 4: VARIABLE IMPORTANCE
+# ================================================================
+# 1. Extract importance using caret's varImp function
+importance_scores_gini <- caret::varImp(rf_tuned, scale = FALSE)
+
+# 2. Prepare the data for plotting
+# The scores are inside the 'importance' slot of the returned object
+importance_df_gini <- as.data.frame(importance_scores_gini$importance)
+importance_df_gini$Gene <- rownames(importance_df_gini)
+# The importance value is in a column named "Overall"
+names(importance_df_gini)[1] <- "MeanDecreaseGini"
+
+
+# Plot 8: Top 20 Important Features - Mean Decrease Gini
+p7 <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini))|> 
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(Gene, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_col(fill = "darkgreen", alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Top 20 Most Important Genes", subtitle="Mean Decrease Gini",
+       x = "Genes", y = "Mean Decrease Gini") +
+  theme_minimal()
+p7
+# You can also use caret's built-in plot for a quick look
+plot(importance_scores_gini, top = 20)
+
+
+#########################
+#MeanDecreaseAccuracy   # previous model does gini, this makes accuracy
+#########################
+# Retrain the model to calculate permutation importance
+set.seed(456)
+rf_tuned_accuracy <- train(
+  condition ~ .,
+  data      = train_data_clean,
+  method    = "ranger",
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneGrid  = grid,
+  num.trees = 2000,           #stabilzes around 2k trees,
+  importance = 'permutation' #  This is the only change
+)
+
+
+# Now you can extract and plot this new importance metric
+importance_scores_acc <- varImp(rf_tuned_accuracy, scale = FALSE)
+importance_df_accuracy <- as.data.frame(importance_scores_acc$importance)
+importance_df_accuracy$Gene <- rownames(importance_df_accuracy)
+names(importance_df_accuracy)[1] <- "MeanDecreaseAccuracy"
+
+
+# Plot 8: Top 20 Important Features - Mean Decrease Accuracy
+p8 <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> 
+  slice_head(n = 20) |>
+  ggplot(aes(x = reorder(Gene, MeanDecreaseAccuracy), y = MeanDecreaseAccuracy)) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Top 20 Most Important Genes" ,subtitle = "Mean Decrease Accuracy",
+       x = "Genes", y = "Mean Decrease Accuracy") +
+  theme_minimal()
+p8
+plot(importance_scores_acc, top = 20)
+
+
+grid.arrange(p7, p8, ncol = 2)
+
+# ================================================================
+# VISUALIZATION 5: MODEL DIAGNOSTICS
+# ================================================================
+rf_tuned$finalModel$prediction.error #--> does not store like random forest all the ntrees errors..
+
+# # Plot 9: Error Rate vs Number of Trees
+# plot(rf_model, main = "Error Rate vs Number of Trees")
+# legend("topright", legend = c("OOB", levels(train_data_clean$condition)), 
+#        col = 1:(length(levels(train_data_clean$condition))+1), lty = 1)
+# 
+# # Plot 10: Out-of-Bag Error Rate
+# oob_error <- rf_model$err.rate[,1]
+# p10 <- data.frame(Trees = 1:length(oob_error), OOB_Error = oob_error) |>
+#   ggplot(aes(x = Trees, y = OOB_Error)) +
+#   geom_line(color = "red", size = 1) +
+#   labs(title = "Out-of-Bag Error Rate vs Number of Trees",
+#        x = "Number of Trees", y = "OOB Error Rate") +
+#   theme_minimal()
+# 
+# print(p10)
+
+trees_to_try <- seq(100, 10000, by = 100)
+oob_errors <- sapply(trees_to_try, function(n_trees) {
+  model <- ranger::ranger(
+    condition ~ .,
+    data       = train_data_clean,
+    num.trees  = n_trees,
+    mtry       = rf_tuned$bestTune$mtry,
+    min.node.size = rf_tuned$bestTune$min.node.size,
+    importance = "impurity",
+    probability = FALSE,
+    oob.error = TRUE
+  )
+  model$prediction.error
+})
+
+# Plot it
+library(ggplot2)
+df <- data.frame(Trees = trees_to_try, OOB_Error = oob_errors)
+
+ggplot(df, aes(x = Trees, y = OOB_Error)) +
+  geom_line(color = "red", linewidth = 0.8) +
+  geom_point(size = 2) +
+  labs(title = "OOB Error Rate vs. Number of Trees",
+       x = "Number of Trees", y = "OOB Error Rate") +
+  theme_minimal()
+
+message("...OOB stabilization curve...")
+message("Set the ntrees to the value where the error stabilizes.")
+# ================================================================
+# VISUALIZATION 6: MULTIDIMENSIONAL SCALING (MDS) PLOT
+# ================================================================
+
+#If the classes (e.g. sclerotic vs. non.sclerotic) separate nicely, the RF has learned a meaningful structure.
+# IF the classes overlap, it means the model is facing difficulties to separate it with the current features.
+
+# The ranger method does not support matrix...  need to rerun with "rf" and specify proximity=true
+# Re-train using method = "rf" and add proximity = TRUE
+# Note: This might be a bit slower than ranger
+set.seed(456)
+rf_tuned_prox <- train(
+  condition ~ .,
+  data      = train_data_clean,
+  method    = "rf",          # Use the original 'randomForest' engine
+  metric    = "ROC",
+  trControl = ctrl,
+  # 'rf' only tunes mtry from your grid, so we specify it directly
+  tuneGrid  = expand.grid(.mtry = c(22, 44, 89)), 
+  num.trees = 2000,           #stabilzes around 2k trees 
+  proximity = TRUE,           #This is the key argument to add!
+)
+
+
+# Get the proximity matrix from the new model
+# The matrix is inside the 'finalModel' slot
+dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
+
+# We also need the predictions from this new model
+train_predictions <- predict(rf_tuned_prox, train_data_clean)
+
+
+library(MASS)
+library(ggplot2)
+library(gridExtra)
+message("...MDS...")
+# MDS plot using proximity matrix, value of distances is more important than the "rank"  (better for interpretation)
+if (!is.null(rf_tuned_prox$finalModel$proximity)) {
+  dist_mat <- 1 - rf_tuned_prox$finalModel$proximity
+  
+  # Classical MDS (metric)
+  mds_metric <- cmdscale(dist_mat, k = 2,eig = TRUE) #calcualte the eigenvectors, which dimensions are more stretcehd and how does the goodness of the fit look.
+  mds_metric_df <- data.frame(
+    MDS1 = mds_metric$points[, 1],
+    MDS2 = mds_metric$points[, 2],
+    Condition = train_data_clean$condition,
+    Predicted = train_predictions
+  )
+  
+  message("...MDS METRIC GOODNESS-OF-FIT... \n...how much is the eigenvector representing and stretched from reallity...\n...if not 90% in first two MDS, data is stretched in many dimensions....")
+  message(paste0("The goodness-of-fit (eigenvector pca-like) information caputed is: ", round(sum(mds_metric$GOF) / 2,digits = 3)*100,"%"))
+  message(paste0("If goodness-of-fit caputed is < 90%\n check that other eigenvectors, contain more information so the first two dimensions are not enouhg\n...INTERPRET with caution... as it can be highly distorted"))
+  message(paste0(" The remaining ",(100 - round(sum(mds_metric$GOF) / 2,digits = 3)*100),"% of the information is lost in the projection from high-dimensional space down to 2D"))
+  # Non-metric MDS, rank of distances is more important than the actual values for the proximity 
+  # Very useful when your distances are semantic, ordinal, or not reliable in scale (random forest values...) semantic
+  # very useful for rf results visu
+  mds_nonmetric <- isoMDS(dist_mat, k = 2)
+  mds_nonmetric_df <- data.frame(
+    MDS1 = mds_nonmetric$points[, 1],
+    MDS2 = mds_nonmetric$points[, 2],
+    Condition = train_data_clean$condition,
+    Predicted = train_predictions
+  )
+  
+  # Plot 11: Classical MDS - colored by actual condition
+  p11 <- ggplot(mds_metric_df, aes(x = MDS1, y = MDS2, color = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Set1") +
+    labs(title = "Classical MDS - Colored by Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 12: Classical MDS - colored by predictions
+  p12 <- ggplot(mds_metric_df, aes(x = MDS1, y = MDS2, color = Predicted, shape = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Dark2") +
+    labs(title = "Classical MDS - Predictions vs Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 13: Non-metric MDS - colored by actual condition
+  p13 <- ggplot(mds_nonmetric_df, aes(x = MDS1, y = MDS2, color = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Set1") +
+    labs(title = "Non-metric MDS - Colored by Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Plot 14: Non-metric MDS - colored by predictions
+  p14 <- ggplot(mds_nonmetric_df, aes(x = MDS1, y = MDS2, color = Predicted, shape = Condition)) +
+    geom_point(size = 3, alpha = 0.7) +
+    scale_color_brewer(palette = "Dark2") +
+    labs(title = "Non-metric MDS - Predictions vs Condition",
+         x = "MDS Dim 1", y = "MDS Dim 2") +
+    theme_minimal()
+  
+  # Display all four plots in a 2x2 grid
+  grid.arrange(p11, p12, p13, p14, ncol = 2)
+}
+
+
+# ================================================================
+# VISUALIZATION 7: GENE EXPRESSION HEATMAP GINI
+# ================================================================
+
+# Create heatmap of top important genes
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)  # Top 50 most important genes
+message(cat("Top50 Gini features:",top_genes))
+top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
+valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
+heatmap_data <- selected_data[valid_genes, ]
+
+# Prepare annotation data
+annotation_col <- as.data.frame(colnames(selected_data))
+colnames(annotation_col) <- "sample"
+annotation_col$sample_2 <- annotation_col$sample
+
+# Split sample names
+annotation_col <- annotation_col |> 
+  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
+
+# safety colname 
+#annotation_col_rownames_safety_check <- annotation_col$sample_2
+# Add metadata (BMI, Age, Gender)
+heatmap_annotation <- annotation_col |> 
+  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
+
+rownames(heatmap_annotation) <- colnames(heatmap_data)
+heatmap_annotation$condition <- factor(heatmap_annotation$condition)
+heatmap_annotation$Gender <- factor(heatmap_annotation$Gender)
+heatmap_annotation$oarsi_scoring <- factor(heatmap_annotation$oarsi_scoring)
+heatmap_annotation$oabs_scoring <- factor(heatmap_annotation$oabs_scoring)
+heatmap_annotation$cysts <- factor(heatmap_annotation$cysts)
+heatmap_annotation$fibrosis <- factor(heatmap_annotation$fibrosis)
+heatmap_annotation$blood_vessels <- factor(heatmap_annotation$blood_vessels)
+heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_thickened)
+heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
+
+
+
+# Create heatmap
+pheatmap(
+  heatmap_data,
+  annotation_col = heatmap_annotation,
+  scale = "row",
+  clustering_distance_rows = "correlation",
+  clustering_distance_cols = "correlation",
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "Heatmap of Top 50 Most GINI Important Genes",
+  fontsize_row = 6,
+  color = colorRampPalette(c("blue", "white", "red"))(100)
+)
+
+# ================================================================
+# VISUALIZATION 7.2: GENE EXPRESSION HEATMAP Accuracy
+# ================================================================
+
+# Create heatmap of top important genes
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)# Top 50 most important genes
+message(cat("Top50 Accuracy features:",top_genes))
+top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
+valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
+heatmap_data <- selected_data[valid_genes, ]
+
+# Prepare annotation data
+annotation_col <- as.data.frame(colnames(selected_data))
+colnames(annotation_col) <- "sample"
+annotation_col$sample_2 <- annotation_col$sample
+
+# Split sample names
+annotation_col <- annotation_col |> 
+  separate(sample, into = c("ID", "tissue", "condition", "type"), sep = "_")
+
+# safety colname 
+#annotation_col_rownames_safety_check <- annotation_col$sample_2
+# Add metadata (BMI, Age, Gender)
+heatmap_annotation <- annotation_col |> 
+  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -type, -sample_2)
+
+rownames(heatmap_annotation) <- colnames(heatmap_data)
+heatmap_annotation$condition <- factor(heatmap_annotation$condition)
+heatmap_annotation$Gender <- factor(heatmap_annotation$Gender)
+heatmap_annotation$oarsi_scoring <- factor(heatmap_annotation$oarsi_scoring)
+heatmap_annotation$oabs_scoring <- factor(heatmap_annotation$oabs_scoring)
+heatmap_annotation$cysts <- factor(heatmap_annotation$cysts)
+heatmap_annotation$fibrosis <- factor(heatmap_annotation$fibrosis)
+heatmap_annotation$blood_vessels <- factor(heatmap_annotation$blood_vessels)
+heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_thickened)
+heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
+
+
+
+# Create heatmap
+pheatmap(
+  heatmap_data,
+  annotation_col = heatmap_annotation,
+  scale = "row",
+  clustering_distance_rows = "correlation",
+  clustering_distance_cols = "correlation",
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  main = "Heatmap of Top 50 Most Accuracy Important Genes",
+  fontsize_row = 6,
+  color = colorRampPalette(c("blue", "white", "red"))(100)
+)
+
+message("they both include oarsi score 6, if sample was very damaged")
+# ================================================================
+# VISUALIZATION 8: PARTIAL DEPENDENCE PLOTS
+# ================================================================
+
+# # Partial dependence plots for top 6 genes
+# top_6_genes <- importance_df_gini$Gene[1:6]
+# 
+# par(mfrow = c(2, 3))
+# for(gene in top_6_genes) {
+#   partialPlot(rf_model, train_data_clean, x.var = paste0(gene), main = paste("Partial Dependence:", gene))
+# }
+# par(mfrow = c(1, 1))
+# Install the pdp package if you haven't already
+# install.packages("pdp")
+library(pdp)
+library(gridExtra)
+
+# 1. Get the names of your top 6 genes from the importance data frame
+# (Assuming your importance data frame is named 'importance_df')
+top_6_genes <- importance_df_gini %>%
+  dplyr::arrange(desc(MeanDecreaseGini)) %>%
+  dplyr::slice_head(n = 6) %>%
+  dplyr::pull(Gene)
+
+# 2. Create and store a PDP for each top gene
+pdp_plots <- list()
+for (gene in top_6_genes) {
+  # The pdp::partial function calculates the dependence
+  p <- pdp::partial(
+    rf_tuned,                      # Your caret model object
+    pred.var = gene,               # The feature (gene) to plot
+    train = train_data_clean,      # The training data used
+    prob = TRUE,                   # Set to TRUE for classification probability
+    which.class = "sclerotic"      # Specify the class of interest
+  ) |> 
+  
+  # The pdp::autoplot function creates the ggplot visualization
+  autoplot() +
+  ggtitle(paste("Partial Plot for", gene)) +
+  ylab("P(sclerotic)") +
+  theme_minimal()
+  
+  pdp_plots[[gene]] <- p
+}
+
+# 3. Arrange all the plots in a 2x3 grid
+grid.arrange(grobs = pdp_plots, ncol = 3)
+
+# ================================================================
+# COMPREHENSIVE MODEL SUMMARY AND INTERPRETATION
+# ================================================================
+
+
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+cat("COMPREHENSIVE RANDOM FOREST MODEL ANALYSIS SUMMARY\n")
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+
+cat("\n1. DATA OVERVIEW:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Total samples:", nrow(combined_data_tibias), "\n")
+cat("- Total features (genes):", ncol(combined_data_tibias) - 4, "\n")
+cat("- Training samples:", nrow(train_data_clean), "\n")
+cat("- Test samples:", nrow(test_data_clean), "\n")
+cat("- Class distribution (overall):", table(combined_data_tibias$condition), "\n")
+
+cat("\n2. MODEL CONFIGURATION:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- Number of trees:", rf_tuned$finalModel$num.trees, "\n")
+cat("- Features per split (mtry):", rf_tuned$bestTune$mtry, "\n")
+cat("- OOB Error Rate:", round(rf_tuned$finalModel$prediction.error* 100, 2), "%\n")
+#here we also have the errors used for up to 10000 trees splitted by 100... from 1000 to 10000
+
+cat("\n3. PERFORMANCE METRICS:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("Training Accuracy:", round(train_cm$overall['Accuracy'] * 100, 2), "%\n")
+cat("Test Accuracy:", round(test_cm$overall['Accuracy'] * 100, 2), "%\n")
+cat("Training Sensitivity:", round(train_cm$byClass['Sensitivity'] * 100, 2), "%\n")
+cat("Test Sensitivity:", round(test_cm$byClass['Sensitivity'] * 100, 2), "%\n")
+cat("Training Specificity:", round(train_cm$byClass['Specificity'] * 100, 2), "%\n")
+cat("Test Specificity:", round(test_cm$byClass['Specificity'] * 100, 2), "%\n")
+
+if(exists("train_roc")) {
+  cat("Training AUC:", round(train_roc$auc, 3), "\n")
+  cat("Test AUC:", round(test_roc$auc, 3), "\n")
+}
+
+cat("\n4. TOP 10 MOST IMPORTANT GENES:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+for(i in 1:10) {
+  cat(sprintf("%2d. %s (MDA: %.4f, MDG: %.4f)\n", 
+              i, importance_df$Gene[i], 
+              importance_df_accuracy$MeanDecreaseAccuracy[i],
+              importance_df_gini$MeanDecreaseGini[i]))
+}
+
+cat("\n5. MODEL INTERPRETATION:\n")
+cat("\n", paste(rep("-", 50), collapse = ""), "\n")
+cat("- The Random Forest model shows", 
+    ifelse(test_cm$overall['Accuracy'] > 0.8, "excellent", 
+           ifelse(test_cm$overall['Accuracy'] > 0.7, "good", "moderate")), 
+    "predictive performance\n")
+
+cat("- OOB error of", round(rf_tuned$finalModel$prediction.error * 100, 2), 
+    "% indicates", 
+    ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.1, "excellent", 
+           ifelse(rf_model$err.rate[rf_model$ntree, 1] < 0.2, "good", "moderate")),
+    "model generalization\n")
+
+if(exists("test_roc")) {
+  cat("- AUC of", round(test_roc$auc, 3), "suggests", 
+      ifelse(test_roc$auc > 0.9, "excellent", 
+             ifelse(test_roc$auc > 0.8, "good", "fair")), 
+      "discriminative ability\n")
+}
+
+cat("- The top important genes likely represent key biomarkers\n")
+cat("  distinguishing sclerotic from non-sclerotic conditions\n")
+
+```
+# MDS shows two samples that do really mix with sclerotic and a few sclerotic veryclose to non.sclerotic according to RF classification =)
+
+
+```{r}
+table(train_data_clean$condition)
+table(test_data_clean$condition)
+
+```
+
+
+```{r}
+#oarsi_samples model
+saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_tibia_samples_rf_model_20250805.rds")
+
+```
+
+# Check correlation of top50 genes (check for gini and accuracy)
+```{r}
+#cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
+#Accuracy
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(100)
+cor_mat <- cor(train_data_clean[, top_genes[top_genes%in% colnames(train_data_clean)]])
+heatmap(cor_mat)
+
+#Gini
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(100)
+cor_mat <- cor(train_data_clean[, top_genes[top_genes%in% colnames(train_data_clean)]])
+heatmap(cor_mat)
+
+```
+
+```{r}
+# Used samples for trainng rf tibias model
+combined_data_tibias$sampleID
+```
+
+
+# Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
+# Therefore impute the missing columns...
+# Use logcpm counts of the sample to predict.
+```{r}
+
+logcpm_tibias <- tibia_sclerotic_vs_non_sclerotic$logcpm[,colnames(tibia_sclerotic_vs_non_sclerotic$logcpm) %in% md_df_tibia_extended$sampleID]
+
+# Non oarsi samples 
+# impute oarsi_score, as it is missing from sample
+tibia_samples_without_features <- tibia_sclerotic_vs_non_sclerotic$logcpm[,!colnames(tibia_sclerotic_vs_non_sclerotic$logcpm) %in% md_df_tibia_extended$sampleID]
+dim(tibia_samples_without_features)
+
+# Add metadata
+tibia_samples_without_features_data <- t(tibia_samples_without_features) |> as.data.frame() 
+tibia_samples_without_features_data$sampleID <- rownames(tibia_samples_without_features_data)
+tibia_samples_without_features_data <- tibia_samples_without_features_data |> dplyr::left_join(md_df_tibia |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI")), by = "sampleID")
+tibia_samples_without_features_data <-tibia_samples_without_features_data |> dplyr::mutate(condition = health_status) |> dplyr::select(-health_status)
+
+#========================
+#Impute the features... to be able to use this model.. so use the mean...
+#=================================
+features_to_fill <- c("oarsi_scoring", "oabs_scoring", "cysts", "fibrosis",
+                      "blood_vessels", "trabeculae_thickened", "inflammation")
+
+for (feature in features_to_fill) {
+  mean_val <- mean(as.numeric(train_data_clean[[feature]]), na.rm = TRUE)
+  #tibia_samples_without_features_data[[feature]] <- factor(round(mean_val))
+  binary_val <- ifelse(mean_val >= 0.5, 1, 0)
+  tibia_samples_without_features_data[[feature]] <- factor(binary_val, levels = c(0, 1))
+}
+#tibia_samples_without_features_data$oabs_scoring <- mean(as.numeric(train_data_clean$oarsi_scoring), na.rm = TRUE)  # Or any other strategy
+#tibia_samples_without_features_data$oarsi_scoring <- factor(round(tibia_samples_without_features_data$oarsi_scoring,digits = 0))
+
+
+
+# Define which columns in training data are genes
+gene_columns <- setdiff(names(train_data_clean), c("condition", "Age", "BMI", "Gender","oarsi_scoring", "oabs_scoring", "cysts", "fibrosis",
+                      "blood_vessels", "trabeculae_thickened", "inflammation"))
+
+# Subset gene columns in new data
+colnames(tibia_samples_without_features_data) <- gsub(x = colnames(tibia_samples_without_features_data),pattern = "-",replacement = ".")
+tibia_samples_without_features_data_test <- tibia_samples_without_features_data[, c(gene_columns,"Age", "BMI", "Gender","oarsi_scoring", "oabs_scoring", "cysts", "fibrosis",
+                      "blood_vessels", "trabeculae_thickened", "inflammation")]
+
+head(tibia_samples_without_features_data_test[,c(tail(colnames(tibia_samples_without_features_data_test),15))])
+tibia_samples_without_features_data_test$fibrosis
+tibia_samples_without_features_data_test$blood_vessels
+```
+
+#Prediction of rest of samples!
+```{r}
+#==============================
+# Predict
+#==============================
+predicted_labels <- predict(rf_tuned, tibia_samples_without_features_data_test) #type = response (majority of votes)  type = prob (highest probability)
+predicted_labels
+```
+
+# Get results
+```{r}
+# Load required packages
+#library(caret)
+#library(e1071)  # for confusionMatrix
+#library(pROC)
+
+# True and predicted labels
+true_labels <- factor(c(tibia_samples_without_features_data$condition))  # Replace with your actual labels
+predicted_labels <- factor(predicted_labels, levels = levels(true_labels))
+
+# Confusion Matrix
+conf_matrix <- confusionMatrix(predicted_labels, true_labels)
+print(conf_matrix)
+
+# Extract metrics
+cat("\nAccuracy: Proportion of total correct predictions", conf_matrix$overall["Accuracy"], "\n")
+cat("Sensitivity (Recall): How well the model identifies actual positives.", conf_matrix$byClass["Sensitivity"], "\n")
+cat("Specificity:How well the model identifies actual negatives.", conf_matrix$byClass["Specificity"], "\n")
+cat("Precision (Pos Pred Value):How many predicted positives are actually positive.", conf_matrix$byClass["Pos Pred Value"], "\n")
+cat("F1 Score: Harmonic mean of precision and recall. It balances both.", 2 * ((conf_matrix$byClass["Sensitivity"] * conf_matrix$byClass["Pos Pred Value"]) /
+                     (conf_matrix$byClass["Sensitivity"] + conf_matrix$byClass["Pos Pred Value"])), "\n")
+
+# Plot 5: Confusion Matrix Heatmaps
+cm_df <- as.data.frame(conf_matrix$table)
+
+ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white", size = 6) +
+  scale_fill_viridis_c() +
+  labs(title = "Rest Samples Confusion Matrix",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+# ROC
+```{r}
+# Binarize the labels for ROC (assuming binary classification)
+true_binary <- ifelse(true_labels == "sclerotic", 1, 0)
+pred_binary <- ifelse(predicted_labels == "sclerotic", 1, 0)
+
+# ROC Curve
+roc_obj <- roc(true_binary, pred_binary)
+plot(roc_obj, col = "orange", main = "ROC Curve")
+auc_value <- auc(roc_obj)
+cat("\nAUC:", auc_value, "\n")
+legend("bottomright", 
+         legend = c(paste("Rest of Samples AUC =", round(auc_value, 2))),
+         col = c("orange"), lwd = 2)
+  
+cat("AUC:", round(auc_value, 3), "\n")
+```
+# ROC Probabilities (which samples ge the highest?)
+```{r}
+pred_probs <- predict(rf_tuned, newdata = tibia_samples_without_features_data_test, type = "prob") #done on probabilities!
+roc_obj <- roc(response = tibia_samples_without_features_data$condition,
+               predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class (if value is higher in sclerotic is sclerotic)
+
+plot.roc(roc_obj, col = "red", print.auc = TRUE)
+
+```
+
+
+
+
+```{r}
+library(ggplot2)
+
+df <- data.frame(True_Label = true_labels,
+                 Predicted_Label = predicted_labels,
+                 SampleID = tibia_samples_without_features_data$sampleID,
+                 Probability.Sclerotic = pred_probs$sclerotic,
+                 Probability.Non.Sclerotic = pred_probs$non.sclerotic,
+                 Predicted_Probability_Label = ifelse(pred_probs$sclerotic < pred_probs$non.sclerotic,"non.sclerotic","sclerotic"))
+
+df
+#df$Correct <- df$True_Label == df$Predicted_Label
+df$Correct_Probability_Label = df$Predicted_Probability_Label == tibia_samples_without_features_data$condition
+
+write.table(df,file = "trained_models_rf/results_prediction_rest_of_samples_with_tibias_features_rf_model.csv",sep = ",",row.names = TRUE,col.names = TRUE)
+df$Color <- ifelse(df$Correct, "green", "red")
+
+#ggplot(df, aes(x = SampleID, y = 1, fill = Correct)) +
+ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
+    geom_tile(color = "white") +
+    scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "red")) +
+    theme_minimal() +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.title = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1)) +
+    labs(title = "Sample Probability Classification Accuracy (Green = Correct, Red = Incorrect)")
+
+
+```
+
+# DONE Tibias
+
+
+# All scored hip samples
+```{r}
+hip_sc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx", sheet = "SC")
+hip_nsc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx", sheet = "NS ")
+```
+
 
 # DONE
 ```{r}
