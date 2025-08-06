@@ -1,0 +1,14 @@
+
+Add info graphic abstract, and say why DEA is not the case for us...
+Figure 2
+Add DEG with a volcano plot of tibia, hip, adipocytes and pellet and maybe some pathways(cytoscape) clusters? making it difficult to associate pathways related to Osteoarthritis, therefore we need to use other techniques to extract info from our data, and therefore we use random forest
+Figure 3
+how do we run rf, what do we learn(describe the models, why do we use them and what do we get) showing some top genes that can be enriched in pathway analysis and determine those pathways have a better association to OA.
+Figure 4 
+treatment model --> non.sclerotic --> to sclerotic (tibias datasets)
+check for modulations that the treatment can produce (validating our model?)
+
+EXTRA
+are some of the genes that we find important, validate them via immunohistochemistry...
+
+Save all results from RF model and pass on to Lea, lists of genes for each model, and me I wil run some enrichment analysis on those lists of genes to look for pathways of interest.
