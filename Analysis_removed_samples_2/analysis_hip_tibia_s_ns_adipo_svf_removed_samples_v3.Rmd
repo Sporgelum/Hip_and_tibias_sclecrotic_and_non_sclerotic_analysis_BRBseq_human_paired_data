@@ -9957,9 +9957,16 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 
 # DONE HIPs   
 ## Maybe use adipocytes and pellet models, if enough samples!
+#=======================================
+## ADD adipocyte and pellet information
+#=======================================
+
+
+
 
 ```{r}
-#
+# Unique genes of adipocytes and unique of pellets and check presence in the rf model predicted genes?
+
 ```
 
 
