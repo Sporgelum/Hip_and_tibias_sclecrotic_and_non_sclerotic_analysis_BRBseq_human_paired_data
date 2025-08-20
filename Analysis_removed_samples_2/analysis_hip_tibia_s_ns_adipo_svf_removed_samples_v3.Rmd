@@ -8916,9 +8916,6 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 
 
 ```
-### ADD cartilage_islands to tibiasm heatmap.
-### ADD pellet model of tibias, and adipocyte model of tibias. (MAYBE) (to look for tissue specificities)
-
 
 # All scored hip samples
 ```{r paged.print=TRUE}
@@ -9040,7 +9037,8 @@ message("using edger top genes, modeled using ~0+patient+group, to extract the t
 
 # quick visu sanity check to see selected genes separate.
 library(pheatmap)
-annotation_col <-  md_df_hip_extended |>  dplyr::select(Group,sampleID,Gender,oarsi_scoring,oabs_scoring,cysts,fibrosis,blood_vessels,cartilage_islands,trabeculae_thickened,inflammation) |> tibble::column_to_rownames("sampleID")
+annotation_col <-  md_df_hip_extended |>  dplyr::select(Group,sampleID,Gender,cysts,fibrosis,blood_vessels,cartilage_islands,trabeculae_thickened,tidemark_integrity,inflammation,oabs_scoring, oarsi_scoring,tissue_celltype_lowercase) |>
+  tibble::column_to_rownames("sampleID")
 
 #pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,# old f statistic pheatmap
 #pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
@@ -9084,7 +9082,7 @@ combined_data_hips$cartilage_islands<- as.factor(combined_data_hips$cartilage_is
 combined_data_hips$oabs_scoring<- as.factor(combined_data_hips$oabs_scoring)
 combined_data_hips$oarsi_scoring<- as.factor(combined_data_hips$oarsi_scoring)
 combined_data_hips$condition <- factor(combined_data_hips$health_status)
-combined_data_hips$celltype <- factor(combined_data_hips$tissue_celltype_lowercase)
+combined_data_hips$tissue_celltype_lowercase <- factor(combined_data_hips$tissue_celltype_lowercase)
 combined_data_hips$Age <- as.numeric(combined_data_hips$Age)
 combined_data_hips$Gender <- factor(combined_data_hips$Gender)
 combined_data_hips$BMI <- as.numeric(combined_data_hips$BMI)
@@ -9184,13 +9182,13 @@ test_data_clean$patientID  <- factor(gsub("_.*", "", test_data_clean$sampleID))
 
 groupids <- train_data_clean$patientID
 
-drop_cols <- c("sampleID", "health_status", "tissue_celltype_lowercase", "celltype", "patientID")
+drop_cols <- c("sampleID", "health_status", "patientID")
 train_data_clean <- train_data_clean[, !(names(train_data_clean) %in% drop_cols)]
 test_data_clean  <- test_data_clean[, !(names(test_data_clean) %in% drop_cols)]
 
 train_data_clean[,(tail(colnames(train_data_clean),15))]
 test_data_clean[,(tail(colnames(test_data_clean),15))]
-non_numeric_cols = c("condition","Gender","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "cartilage_islands","tidemark_integrity","inflammation")
+non_numeric_cols = c("condition","Gender","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "cartilage_islands","tidemark_integrity","inflammation","tissue_celltype_lowercase")
 
 train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
 test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
@@ -9534,8 +9532,8 @@ if (!is.null(rf_tuned_prox$finalModel$proximity)) {
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)  # Top 50 most important genes
-message(cat("Top50 Gini features:",top_genes))
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(100)  # Top 50 most important genes
+message(cat("Top100 Gini features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -9553,8 +9551,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  dplyr::left_join(md_df_hip_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened","cartilage_islands","tidemark_integrity", "inflammation")], by = c("sample_2"="sampleID")) |>
-  dplyr::select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df_hip_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened","cartilage_islands","tidemark_integrity", "inflammation","tissue_celltype_lowercase")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -sample_2, -type)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 heatmap_annotation$condition <- factor(heatmap_annotation$condition)
@@ -9568,6 +9566,7 @@ heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_
 heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
 heatmap_annotation$cartilage_islands <- factor(heatmap_annotation$cartilage_islands)
 heatmap_annotation$tidemark_integrity <- factor(heatmap_annotation$tidemark_integrity)
+heatmap_annotation$tissue_celltype_lowercase <- factor(heatmap_annotation$tissue_celltype_lowercase)
 
 
 
@@ -9590,8 +9589,8 @@ pheatmap(
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)# Top 50 most important genes
-message(cat("Top50 Accuracy features:",top_genes))
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(100)# Top 100 most important genes
+message(cat("Top100 Accuracy features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -9609,8 +9608,8 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  dplyr::left_join(md_df_hip_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "tidemark_integrity","cartilage_islands", "inflammation")], by = c("sample_2"="sampleID")) |>
-  dplyr::select(-ID, -tissue, -type, -sample_2)
+  dplyr::left_join(md_df_hip_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "tidemark_integrity","cartilage_islands", "inflammation","tissue_celltype_lowercase")], by = c("sample_2"="sampleID")) |>
+  dplyr::select(-ID, -tissue, -sample_2, -type) # keep tissue_celltype_lowercase adds info if the samples are adipocytes or pellets.
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
 heatmap_annotation$condition <- factor(heatmap_annotation$condition)
@@ -9624,6 +9623,8 @@ heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_
 heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
 heatmap_annotation$cartilage_islands <- factor(heatmap_annotation$cartilage_islands)
 heatmap_annotation$tidemark_integrity <- factor(heatmap_annotation$tidemark_integrity)
+heatmap_annotation$tissue_celltype_lowercase <- factor(heatmap_annotation$tissue_celltype_lowercase)
+
 
 
 
@@ -9771,7 +9772,9 @@ table(test_data_clean$condition)
 
 ```{r}
 #oarsi_samples model
-saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_hip_samples_rf_model_20250806.rds")
+#saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_hip_samples_rf_model_20250806.rds")
+saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_hip_samples_rf_model_20250820.rds")
+
 
 ```
 
@@ -9811,7 +9814,8 @@ dim(hip_samples_without_features)
 # Add metadata
 hip_samples_without_features_data <- t(hip_samples_without_features) |> as.data.frame() 
 hip_samples_without_features_data$sampleID <- rownames(hip_samples_without_features_data)
-hip_samples_without_features_data <- hip_samples_without_features_data |> dplyr::left_join(md_df_hip |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI")), by = "sampleID")
+
+hip_samples_without_features_data <- hip_samples_without_features_data |> dplyr::left_join(md_df_hip |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI","tissue_celltype_lowercase")), by = "sampleID")
 hip_samples_without_features_data <- hip_samples_without_features_data |> dplyr::mutate(condition = health_status) |> dplyr::select(-health_status)
 
 #========================
@@ -9819,6 +9823,7 @@ hip_samples_without_features_data <- hip_samples_without_features_data |> dplyr:
 #=================================
 features_to_fill <- c("oarsi_scoring", "oabs_scoring", "cysts", "fibrosis",
                       "blood_vessels", "trabeculae_thickened", "inflammation","cartilage_islands","tidemark_integrity")
+
 
 for (feature in features_to_fill) {
   mean_val <- mean(as.numeric(train_data_clean[[feature]]), na.rm = TRUE)
@@ -9951,9 +9956,8 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 ```
 
 # DONE HIPs   
-## Maybe use adipocytes and pellet models, if enough samples!
 #=======================================
-## ADD adipocyte and pellet information on the models in hips and tibias.
+## ADD adipocyte and pellet information on the models in tibias.
 #=======================================
 
 
