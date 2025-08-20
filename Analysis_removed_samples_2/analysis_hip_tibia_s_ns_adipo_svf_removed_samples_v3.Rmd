@@ -53,7 +53,7 @@ head(matrix_counts_hip)
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 ncol(matrix_counts_tibia)
 colnames(matrix_counts_tibia)
 ```
@@ -108,7 +108,7 @@ print(md_df)
 
 
 
-```{r}
+```{r paged.print=TRUE}
 md
 md_df
 
@@ -197,7 +197,7 @@ ggplot(data = summary_df, aes(x = tissue_lowercase, y = n, fill = tissue_lowerca
 
 ```
 # Add gender, age and BMI to metadata.
-```{r}
+```{r paged.print=TRUE}
 agbmi_df <- readxl::read_xlsx(path ="/home/mbotos/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/age-gender-BRBseq_2.xlsx")
 agbmi_df
 
@@ -823,7 +823,7 @@ sums_mm_tibia
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 # Check samples are removed
 samples_to_be_removed <- c("X163_Tibia_sclerotic_pellet",    "X107_Tibia_non.sclerotic_adipocyte",    "X107_Tibia_sclerotic_adipocyte",    "X107_Tibia_non.sclerotic_pellet",    "X107_Tibia_sclerotic_pellet",
                            "X99_Tibia_sclerotic_adipocyte",    "X80_Tibia_non.sclerotic_pellet",    "X80_Tibia_sclerotic_pellet",    "X80_Tibia_non.sclerotic_adipocyte",    "X80_Tibia_sclerotic_adipocyte",
@@ -960,7 +960,7 @@ plotly::ggplotly(p3, tooltip = "text")
 ```
 
 # Filter Samples
-```{r}
+```{r paged.print=TRUE}
 sums_mm_hip <- sums_mm |> dplyr::filter(!Sum < 791286)
 sums_mm |> dplyr::filter(Sum < 791286)
 sums_mm_hip$Samples <- rownames(sums_mm_hip)
@@ -968,7 +968,7 @@ sums_mm_hip
 
 ```
 ## Clean samples hip
-```{r}
+```{r paged.print=TRUE}
 samples_to_be_removed_hip <- c("X74_Hip_non.sclerotic_adipocyte",    "X74_Hip_sclerotic_adipocyte",    "X79_Hip_non.sclerotic_adipocyte",    "X79_Hip_sclerotic_adipocyte",    "X150_Hip_non.sclerotic_adipocyte",
                                "X74_Hip_non.sclerotic_pellet",    "X74_Hip_sclerotic_pellet",    "X78_Hip_non.sclerotic_adipocyte",    "X78_Hip_sclerotic_adipocyte",    "X78_Hip_non.sclerotic_pellet",
                                "X78_Hip_sclerotic_pellet",    "X154_Hip_sclerotic_pellet",    "X154_Hip_non.sclerotic_pellet",    "X145_Hip_non.sclerotic_pellet",    "X126_Hip_non.sclerotic_pellet")
@@ -989,13 +989,13 @@ sums_mm_hip
 # Comparisons
 ### Use the samples cleaned objects
 
-```{r}
+```{r paged.print=TRUE}
 sums_mm_tibia
 sums_mm_hip 
 ```
 
 # filter out the samples we removed before
-```{r}
+```{r paged.print=TRUE}
 sums_mm_tibia
 sums_mm_hip
 #matrix_counts_tibia
@@ -1020,15 +1020,13 @@ md_df_hip$sampleID[grepl(pattern = "X74",x = md_df_hip$sampleID)]
 ```
 
 
-#############
-### EDGER ###
-#############
 
+## EDGER 
 ### LRT: Suitable for complex designs but may not fully account for variability, potentially leading to inflated false positives.
 ### QLF: Provides robust results by modeling extra variability through quasi-likelihood methods and shrinkage estimators. It yields more accurate p-values and better control over false positives.
 
 # --- Normalize
-```{r,fig.width=12,fig.height=6}
+```{r,fig.width=12,fig.height=6, paged.print=TRUE}
 #############
 #   edgeR   #
 #############
@@ -1082,7 +1080,7 @@ for (column_to_plot in c("Tissue/cell type","Age","health_status","Group","Plate
 
 # EDGER Normalization function
 
-```{r}
+```{r paged.print=TRUE}
 library(edgeR)
 library(dplyr)
 
@@ -1183,7 +1181,7 @@ for (column_to_plot in c("Tissue/cell type","Age","health_status","Group", "Plat
 ```
 
 # Tibia only pellet
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 md_df_tibia |>
   dplyr::filter(tissue_celltype_lowercase == "pellet") |>
   dplyr::pull(sampleID)
@@ -1223,7 +1221,7 @@ for (column_to_plot in colnames(md_df_tibia |> dplyr::filter(tissue_celltype_low
 
 ```
 #Tibia only adipocyte
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 md_df_tibia |>
   dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
   dplyr::pull(sampleID)
@@ -1273,7 +1271,7 @@ for (column_to_plot in c(colnames(md_df_tibia |> dplyr::filter(tissue_celltype_l
 #      HIP                #
 ###########################
 # Normalized PCA
-```{r}
+```{r paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_hip$matrix_raw_filtered_samples_for_DEG,
   gene_info = rownames(m_pca_hip$matrix_raw),  # Ensure this is a data frame or matrix
@@ -1305,7 +1303,7 @@ for (column_to_plot in c("Tissue/cell type","Age","health_status","Group", "Plat
 
 
 #Hip only adipocyte
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 md_df_hip |>
   dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
   dplyr::pull(sampleID)
@@ -1340,7 +1338,7 @@ for (column_to_plot in c(colnames(md_df_hip |> dplyr::filter(tissue_celltype_low
 }
 ```
 #Hip only pellet
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 md_df_hip |>
   dplyr::filter(tissue_celltype_lowercase == "pellet") |>
   dplyr::pull(sampleID)
@@ -1555,7 +1553,7 @@ m_pca_samples_bone <- run_pca_structuring_2(matrix_data = m_samples_bone,transpo
 ```
 
 
-```{r,fig.width=12,fig.height=6}
+```{r,fig.width=12,fig.height=6, paged.print=TRUE}
 ### Need to be run the run_pca_structuring before the plot the pca otherwise the objects mess up
 # Generate the columns in the md_df_bone
 
@@ -1612,7 +1610,7 @@ m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG <- m_pca_samples_bone$mat
 ```
 
 # All 
-```{r}
+```{r paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    dplyr::pull(sampleID)],
@@ -1646,7 +1644,7 @@ results_all_samples <- results
 # vertically in adipocytes and pellet
 
 # Sclerotic all
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -1679,7 +1677,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 # Adipo non sclerotic
 ```
 # Non sclerotic all
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -1712,7 +1710,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 
 
 #Sclerotic only Pellets
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -1744,7 +1742,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 
 
 # Non sclerotic only pellets
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -1773,7 +1771,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 ```
 # again horizontally tibias and hip
 # Sclerotic adipocytes only
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -1802,7 +1800,7 @@ for (column_to_plot in c(colnames(md_df_bone |> dplyr::filter(health_status == "
 #again horizontally hip and tibias
 
 # Non scleoritc adipocytes only
-```{r warning=FALSE}
+```{r warning=FALSE, paged.print=TRUE}
 results <- normalize_and_pca(
   count_matrix = m_pca_samples_bone$matrix_raw_filtered_samples_for_DEG[,md_df_bone |>
                                                                    #dplyr::filter(tissue_celltype_lowercase == "adipocyte") |>
@@ -2298,7 +2296,7 @@ More Realistic Estimates: The inclusion of patient as a random effect or as a fi
 # HIP
 
 ## HIP Adipocytes Sclerotic vs non sclerotic
-```{r}
+```{r paged.print=TRUE}
 # Measure the time taken to run the function and store the result
 time_taken <- system.time({
   hip_adipocytes_sclerotic_vs_non_sclerotic <- test_diff_exp(
@@ -2322,7 +2320,7 @@ time_taken <- system.time({
 print(time_taken)
 ```
 # Visualize fitted values and residuals from edgeR after modelling via PCA.
-```{r}
+```{r paged.print=TRUE}
 # Fitted values and residuals, raw filtered counts are inside the d$counts
 fit_edgeR <- hip_adipocytes_sclerotic_vs_non_sclerotic$fit$fitted.values
 dim(fit_edgeR)
@@ -2436,14 +2434,14 @@ PCA Diagnostics Summary:
 
 
 
-```{r}
+```{r paged.print=TRUE}
 hip_adipocytes_sclerotic_vs_non_sclerotic$name
 print(hip_adipocytes_sclerotic_vs_non_sclerotic$boxplot_gg)
 hip_adipocytes_sclerotic_vs_non_sclerotic$results$table
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 base_path <- "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/hip_patient/"
 dir.create(path = base_path)
 save_results_deg(hip_adipocytes_sclerotic_vs_non_sclerotic, base_path)
@@ -2461,7 +2459,7 @@ volcano_hip_adipocytes_sclerotic_vs_non_sclerotic
 
 
 ## HIP Pellet Sclerotic vs non sclerotic
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   hip_pellet_sclerotic_vs_non_sclerotic <- test_diff_exp(
     counts =
@@ -2481,7 +2479,7 @@ time_taken <- system.time({
 
 print(time_taken)
 ```
-```{r}
+```{r paged.print=TRUE}
 hip_pellet_sclerotic_vs_non_sclerotic$name
 print(hip_pellet_sclerotic_vs_non_sclerotic$boxplot_gg)
 hip_pellet_sclerotic_vs_non_sclerotic$results$table
@@ -2509,7 +2507,7 @@ The SRPX2 protein contains a TSR-1 domain, which is associated with the extracel
 
 # Hip sclerotic vs non sclerotic
 
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   hip_sclerotic_vs_non_sclerotic <- test_diff_exp(
     counts = 
@@ -2534,14 +2532,14 @@ time_taken <- system.time({
 print(time_taken)
 ```
 
-```{r}
+```{r paged.print=TRUE}
 hip_sclerotic_vs_non_sclerotic$name
 print(hip_sclerotic_vs_non_sclerotic$boxplot_gg)
 hip_sclerotic_vs_non_sclerotic$results$table
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 base_path <- "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/hip_patient/"
 dir.create(path = base_path)
 save_results_deg(hip_sclerotic_vs_non_sclerotic, base_path)
@@ -2565,7 +2563,7 @@ volcano_hip_sclerotic_vs_non_sclerotic
 ```
 # TIBIA
 ## Tibia Adipocytes Sclerotic vs non sclerotic
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   tibia_adipocytes_sclerotic_vs_non_sclerotic <- test_diff_exp(
     counts =
@@ -2588,7 +2586,7 @@ time_taken <- system.time({
 
 print(time_taken)
 ```
-```{r}
+```{r paged.print=TRUE}
 tibia_adipocytes_sclerotic_vs_non_sclerotic$name
 tibia_adipocytes_sclerotic_vs_non_sclerotic$results$table
 print(tibia_adipocytes_sclerotic_vs_non_sclerotic$boxplot_gg)
@@ -2612,7 +2610,7 @@ volcano_tibia_adipocytes_sclerotic_vs_non_sclerotic
 
 
 ## TIBIA Pellet Sclerotic vs non sclerotic
-```{r}
+```{r paged.print=TRUE}
 tibia_pellet_sclerotic_vs_non_sclerotic <- test_diff_exp(
   counts =
     m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia |>
@@ -2631,7 +2629,7 @@ tibia_pellet_sclerotic_vs_non_sclerotic <- test_diff_exp(
   control_condition = "TNSP")
 ```
 
-```{r}
+```{r paged.print=TRUE}
 tibia_pellet_sclerotic_vs_non_sclerotic$name
 tibia_pellet_sclerotic_vs_non_sclerotic$results$table
 print(tibia_pellet_sclerotic_vs_non_sclerotic$boxplot_gg)
@@ -2656,7 +2654,7 @@ volcano_tibia_pellet_sclerotic_vs_non_sclerotic
 ```
 # Tibia sclerotic vs non sclerotic
 
-```{r}
+```{r paged.print=TRUE}
 
 time_taken <- system.time({
   tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(
@@ -2676,7 +2674,7 @@ time_taken <- system.time({
 })
 print(time_taken)
 ```
-```{r}
+```{r paged.print=TRUE}
 tibia_sclerotic_vs_non_sclerotic$name
 tibia_sclerotic_vs_non_sclerotic$results$table
 print(tibia_sclerotic_vs_non_sclerotic$boxplot_gg)
@@ -2702,11 +2700,8 @@ volcano_tibia_sclerotic_vs_non_sclerotic
 # Bone
 ## Hip and tibias
 
-```{r}
 
-```
-
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   bone_tibia_vs_hip <- test_diff_exp(
     counts =
@@ -2731,7 +2726,7 @@ print(time_taken)
 
 ```
 
-```{r}
+```{r paged.print=TRUE}
 bone_tibia_vs_hip$name
 bone_tibia_vs_hip$results$table
 bone_tibia_vs_hip$boxplot_gg
@@ -2744,7 +2739,7 @@ dir.create(path = base_path)
 save_results_deg(bone_tibia_vs_hip, base_path)
 ```
 # Non sclerotic bone
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   bone_non_sclerotic_tibia_vs_hip <- test_diff_exp(
     counts =
@@ -2769,20 +2764,20 @@ time_taken <- system.time({
 
 print(time_taken)
 ```
-```{r}
+```{r paged.print=TRUE}
 bone_non_sclerotic_tibia_vs_hip$name
 bone_non_sclerotic_tibia_vs_hip$results$table
 print(bone_non_sclerotic_tibia_vs_hip$boxplot_gg)
 ```
 # ribosomes and mhc complex-i again.
 
-```{r}
+```{r paged.print=TRUE}
 base_path <- "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/bone/non_sclerotic_"
 dir.create(base_path)
 save_results_deg(bone_non_sclerotic_tibia_vs_hip, base_path)
 ```
 # Sclerotic bone 
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   bone_sclerotic_tibia_vs_hip <- test_diff_exp(
     counts = 
@@ -2807,13 +2802,13 @@ time_taken <- system.time({
 
 print(time_taken)
 ```
-```{r}
+```{r paged.print=TRUE}
 bone_sclerotic_tibia_vs_hip$name
 bone_sclerotic_tibia_vs_hip$results$table
 print(bone_sclerotic_tibia_vs_hip$boxplot_gg)
 ```
 
-```{r}
+```{r paged.print=TRUE}
 base_path <- "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/bone/sclerotic_"
 dir.create(path = base_path)
 save_results_deg(bone_sclerotic_tibia_vs_hip, base_path)
@@ -2980,7 +2975,7 @@ save_results_deg(bone_sclerotic_tibia_vs_hip, base_path)
 # Adipocytes bone
 ## Non-sclerotic vs Sclerotic 
 
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(
     counts = 
@@ -3003,7 +2998,7 @@ print(time_taken)
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic$name
 adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table
 print(adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic$boxplot_gg)
@@ -3033,7 +3028,7 @@ volcano_adipocyte_hip_and_tibia_sclerotic_vs_non_sclerotic
 # All pellets
 # pellets bone
 ## Non-sclerotic vs Sclerotic
-```{r}
+```{r paged.print=TRUE}
 time_taken <- system.time({
   pellets_hip_and_tibia_sclerotic_vs_non_sclerotic <- test_diff_exp(
     counts = 
@@ -3056,7 +3051,7 @@ print(time_taken)
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$name
 pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table
 pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$bo
@@ -3064,7 +3059,7 @@ head(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$fit$desing)
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 base_path <- "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/DGE_Results_tables/pellets_patient/pellet_tibia_and_hip_"
 dir.create(path = base_path,recursive = TRUE)
 save_results_deg(pellets_hip_and_tibia_sclerotic_vs_non_sclerotic, base_path)
@@ -3108,7 +3103,7 @@ library(enrichR)
 ```{r}
 setEnrichrSite("Enrichr") # Human genes
 ```
-```{r}
+```{r paged.print=TRUE}
 
 websiteLive <- getOption("enrichR.live")
 if (websiteLive) {
@@ -3120,7 +3115,7 @@ if (websiteLive) dbs <- listEnrichrDbs()
 dbs
 ```
 
-```{r}
+```{r paged.print=TRUE}
 #pellets_hip_and_tibia_sclerotic_vs_non_sclerotic[[1]]$results$table |> dplyr::filter(FDR < 0.05)
 pellets_hip_and_tibia_sclerotic_vs_non_sclerotic$results$table |> dplyr::filter(FDR < 0.05)
 
@@ -3146,7 +3141,7 @@ enriched[["CellMarker_2024"]]
 ```
 
 
-```{r}
+```{r paged.print=TRUE}
 enriched
 enriched$CellMarker_2024
 ```
@@ -3199,13 +3194,13 @@ lapply(names(enriched), function(y) {
 ```
 
 # Add all comparisons in a list
-```{r}
+```{r paged.print=TRUE}
 ls(all.names = TRUE)
 # Get all object names that match a pattern
 comparison_names <- ls(pattern = "vs")
 comparison_names
 ```
-```{r}
+```{r paged.print=TRUE}
 # Retrieve the comparisons and put them into a list
 comparisons_list <- mget(comparison_names[!grepl(pattern ="^volcano_*",x =  comparison_names)])
 comparisons_list
@@ -4167,7 +4162,7 @@ comparisons_list
 # RF on comparisons of interest
 # RF 
 # Hip adipocyte sclerotic vs non sclerotic RF.
-```{r,fig.height=5, fig.width=6}
+```{r fig.width=6, paged.print=TRUE}
 library(randomForest)
 library(heatmaply)
 library(dplyr)
@@ -4716,7 +4711,7 @@ cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 # RF
 # Hip pellet sclerotic vs non sclerotic RF.
 # RF
-```{r,fig.height=5, fig.width=6}
+```{r fig.width=6, paged.print=TRUE}
 library(randomForest)
 library(heatmaply)
 library(dplyr)
@@ -5233,7 +5228,7 @@ cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 ## Tibia
 # tibia adipocyte sclerotic vs non sclerotic RF.
 # RF
-```{r,fig.height=5, fig.width=6}
+```{r fig.width=6, paged.print=TRUE}
 library(randomForest)
 library(heatmaply)
 library(dplyr)
@@ -5748,7 +5743,7 @@ cat("\n", paste(rep("=", 80), collapse = ""), "\n")
 # RF
 # Tibia pellet sclerotic vs non sclerotic rf
 # RF
-```{r,fig.height=5, fig.width=6}
+```{r fig.width=6, paged.print=TRUE}
 library(randomForest)
 library(heatmaply)
 library(dplyr)
@@ -6328,7 +6323,7 @@ oarsi_data_scores
 # Using all samples together from hip and tibias to predict sclerotic and non-sclerotic.
 # GO RUN LINE "1660" to get all the samples normalized together.
 
-```{r,fig.width=16,fig.height=95}
+```{r,fig.width=16,fig.height=95, paged.print=TRUE}
 # Prepare annotation data, select the top 2000 of F-statistic gnees that help separate between classes as here we dont use the DEG.. we remove genes with low HVG and use the features, for all the conditions which include, tibia hip and pellet and adipo samples.
 
 #===========================================================================================================================================
@@ -6439,7 +6434,7 @@ pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,
 ```
 
 # Build RF model with selected genes and OARSI features
-```{r}
+```{r paged.print=TRUE}
 
 annotation_col <- as.data.frame(colnames(selected_data))
 colnames(annotation_col) <- "sample"
@@ -6503,7 +6498,7 @@ annotation_col_oarsi_samples
 ```
 
 # RF model with info OARSI samples.
-```{r,fig.height=4,fig.width=6}
+```{r,fig.height=4,fig.width=6, paged.print=TRUE}
 
 #df$score <- ifelse(!is.na(df$score_a), df$score_a, df$score_b)
 # done above easily
@@ -6609,7 +6604,7 @@ combined_data[,c("sample_2","tissue",tail(colnames(combined_data,10)))]
 library(caret)
 ```
 
-```{r}
+```{r paged.print=TRUE}
 # ================================================================
 # TRAIN-TEST SPLIT (Patient-wise to avoid data leakage)
 # ================================================================
@@ -7278,7 +7273,7 @@ saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBs
 ```
 
 # Check correlation of top50 genes (check for gini and accuracy)
-```{r}
+```{r paged.print=TRUE}
 #cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
 #Accuracy
 top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)
@@ -7348,7 +7343,7 @@ predicted_labels
 ```
 
 # Get results
-```{r}
+```{r paged.print=TRUE}
 # Load required packages
 #library(caret)
 #library(e1071)  # for confusionMatrix
@@ -7383,7 +7378,7 @@ ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
 ```
 
 # ROC
-```{r}
+```{r paged.print=TRUE}
 # Binarize the labels for ROC (assuming binary classification)
 true_binary <- ifelse(true_labels == "sclerotic", 1, 0)
 pred_binary <- ifelse(predicted_labels == "sclerotic", 1, 0)
@@ -7400,7 +7395,7 @@ legend("bottomright",
 cat("AUC:", round(auc_value, 3), "\n")
 ```
 # ROC Probabilities (which samples ge the highest?)
-```{r}
+```{r paged.print=TRUE}
 pred_probs <- predict(rf_tuned, newdata = logcpm_non_oarsi_data_test, type = "prob") #done on probabilities!
 roc_obj <- roc(response = logcpm_non_oarsi_data$condition,
                predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class (if value is higher in sclerotic is sclerotic)
@@ -7412,7 +7407,7 @@ plot.roc(roc_obj, col = "red", print.auc = TRUE)
 
 
 
-```{r}
+```{r paged.print=TRUE}
 library(ggplot2)
 
 df <- data.frame(True_Label = true_labels,
@@ -7445,14 +7440,14 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 
 
 # Test other machine learning models performance.
-```{r}
+```{r paged.print=TRUE}
 train_data_clean[,(tail(colnames(train_data_clean)))]
 test_data_clean[,(tail(colnames(test_data_clean)))]
 
 non_numeric_cols = c("condition","Gender","BMI","oarsi_score")
 ```
 
-```{r}
+```{r paged.print=TRUE}
 train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
 test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
 
@@ -7884,7 +7879,7 @@ tibia_nsc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_H
 md_df_tibia
 
 ```
-```{r}
+```{r paged.print=TRUE}
 # ================================================================
 # EXTRACT AND MATCH OARSI SCORES FROM EXCEL TO METADATA
 # ================================================================
@@ -7919,7 +7914,7 @@ tibia_nsc_clean_wide <- tibia_nsc_clean |> dplyr::select(sample_number, features
 
 
 
-```{r}
+```{r paged.print=TRUE}
 # Select only sclerotic samples from the md_df_tibia
 md_df_tibia_sclerotic <- md_df_tibia |> dplyr::filter(health_status == "sclerotic") |> 
   dplyr::left_join(tibia_sc_clean_wide,by = "sample_number") |> 
@@ -7947,7 +7942,7 @@ md_df_tibia_extended
 table(md_df_tibia_extended$health_status)
 ```
 
-```{r}
+```{r paged.print=TRUE}
 # ================================================================
 # PREPARE DATASETS FOR MODELING
 # ================================================================
@@ -7958,7 +7953,7 @@ head(logcpm_tibias)
 cat("Tibia expression samples:", ncol(logcpm_tibias), "\n")
 ```
 
-```{r}
+```{r paged.print=TRUE}
 # No need to run again limma as we have here already the F statistsic from the edgeR results.
 head(tibia_sclerotic_vs_non_sclerotic$d$design)
 top_f_genes <- tibia_sclerotic_vs_non_sclerotic$results$table |> 
@@ -8031,7 +8026,7 @@ pheatmap::pheatmap(mat = selected_data,
 
 ```
 # Build RF model tibias and physiological scores 
-```{r}
+```{r paged.print=TRUE}
 combined_data_tibias <- as.data.frame(t(selected_data)) |> tibble::rownames_to_column(var = "sampleID") |> dplyr::left_join(md_df_tibia_extended |>
                                                                                                                               dplyr::select(sampleID,health_status,tissue_lowercase,
                                                                                                                                             tissue_celltype_lowercase,Age,Gender,BMI,cysts,
@@ -8748,7 +8743,7 @@ saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBs
 ```
 
 # Check correlation of top50 genes (check for gini and accuracy)
-```{r}
+```{r paged.print=TRUE}
 #cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
 #Accuracy
 top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(100)
@@ -8771,7 +8766,7 @@ combined_data_tibias$sampleID
 # Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
 # Therefore impute the missing columns...
 # Use logcpm counts of the sample to predict.
-```{r}
+```{r paged.print=TRUE}
 
 logcpm_tibias <- tibia_sclerotic_vs_non_sclerotic$logcpm[,colnames(tibia_sclerotic_vs_non_sclerotic$logcpm) %in% md_df_tibia_extended$sampleID]
 
@@ -8827,7 +8822,7 @@ predicted_labels
 ```
 
 # Get results
-```{r}
+```{r paged.print=TRUE}
 # Load required packages
 #library(caret)
 #library(e1071)  # for confusionMatrix
@@ -8862,7 +8857,7 @@ ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
 ```
 
 # ROC
-```{r}
+```{r paged.print=TRUE}
 # Binarize the labels for ROC (assuming binary classification)
 true_binary <- ifelse(true_labels == "sclerotic", 1, 0)
 pred_binary <- ifelse(predicted_labels == "sclerotic", 1, 0)
@@ -8879,7 +8874,7 @@ legend("bottomright",
 cat("AUC:", round(auc_value, 3), "\n")
 ```
 # ROC Probabilities (which samples ge the highest?)
-```{r}
+```{r paged.print=TRUE}
 pred_probs <- predict(rf_tuned, newdata = tibia_samples_without_features_data_test, type = "prob") #done on probabilities!
 roc_obj <- roc(response = tibia_samples_without_features_data$condition,
                predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class (if value is higher in sclerotic is sclerotic)
@@ -8891,7 +8886,7 @@ plot.roc(roc_obj, col = "red", print.auc = TRUE)
 
 
 
-```{r}
+```{r paged.print=TRUE}
 library(ggplot2)
 
 df <- data.frame(True_Label = true_labels,
@@ -8926,7 +8921,7 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 
 
 # All scored hip samples
-```{r}
+```{r paged.print=TRUE}
 hip_sc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx", sheet = "SC")
 hip_nsc <- readxl::read_xlsx("~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/metadata/oarsi_and_oabs_scoring_2.xlsx", sheet = "NS ")
 
@@ -8953,7 +8948,7 @@ rownames(hip_nsc_clean) <- paste0("X",rownames(hip_nsc_clean))
 hip_nsc_clean$sample_number <- rownames(hip_nsc_clean)
 hip_nsc_clean
 ```
-```{r}
+```{r paged.print=TRUE}
 md_df_hip_sclerotic <- md_df_hip |> dplyr::filter(health_status == "sclerotic") |> 
   dplyr::left_join(hip_sc_clean,by = "sample_number") |> 
   dplyr::filter(!is.na(oarsi_scoring) & !is.na(cysts) & !is.na(inflammation))
@@ -8989,7 +8984,7 @@ head(logcpm_hips)
 cat("Tibia expression samples:", ncol(logcpm_hips), "\n")
 ```
 
-```{r,fig.height=12,fig.width=8}
+```{r,fig.height=12,fig.width=8, paged.print=TRUE}
 # No need to run again limma as we have here already the F statistsic from the edgeR results.
 head(hip_sclerotic_vs_non_sclerotic$d$design)
 top_f_genes <- hip_sclerotic_vs_non_sclerotic$results$table |> 
@@ -9060,7 +9055,7 @@ pheatmap::pheatmap(mat = selected_data,
 )
 ```
 # Build RF model tibias and physiological scores 
-```{r}
+```{r paged.print=TRUE}
 combined_data_hips <- as.data.frame(t(selected_data)) |> tibble::rownames_to_column(var = "sampleID") |> dplyr::left_join(md_df_hip_extended |>
                                                                                                                             dplyr::select(sampleID,health_status,tissue_lowercase,
                                                                                                                                           tissue_celltype_lowercase,Age,Gender,BMI,cysts,
@@ -9781,7 +9776,7 @@ saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBs
 ```
 
 # Check correlation of top50 genes (check for gini and accuracy)
-```{r}
+```{r paged.print=TRUE}
 #cor_mat <- cor(train_data_clean[, gsub(top_genes,pattern = "\\-",replacement = ".")])
 #Accuracy
 top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(100)
@@ -9804,7 +9799,7 @@ combined_data_hips$sampleID
 # Use data predict any sample (without oarsi score... usually random forest wants to have the same columns..)
 # Therefore impute the missing columns...
 # Use logcpm counts of the sample to predict.
-```{r}
+```{r paged.print=TRUE}
 
 logcpm_hips <- hip_sclerotic_vs_non_sclerotic$logcpm[,colnames(hip_sclerotic_vs_non_sclerotic$logcpm) %in% md_df_hip_extended$sampleID]
 
@@ -9860,7 +9855,7 @@ predicted_labels
 ```
 
 # Get results
-```{r}
+```{r paged.print=TRUE}
 # Load required packages
 #library(caret)
 #library(e1071)  # for confusionMatrix
@@ -9895,7 +9890,7 @@ ggplot(cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
 ```
 
 # ROC
-```{r}
+```{r paged.print=TRUE}
 # Binarize the labels for ROC (assuming binary classification)
 true_binary <- ifelse(true_labels == "sclerotic", 1, 0)
 pred_binary <- ifelse(predicted_labels == "sclerotic", 1, 0)
@@ -9912,7 +9907,7 @@ legend("bottomright",
 cat("AUC:", round(auc_value, 3), "\n")
 ```
 # ROC Probabilities (which samples ge the highest?)
-```{r}
+```{r paged.print=TRUE}
 pred_probs <- predict(rf_tuned, newdata = hip_samples_without_features_data_test, type = "prob") #done on probabilities!
 roc_obj <- roc(response = hip_samples_without_features_data$condition,
                predictor = pred_probs[, "sclerotic"])  # assuming sclerotic is positive class (if value is higher in sclerotic is sclerotic)
@@ -9924,7 +9919,7 @@ plot.roc(roc_obj, col = "red", print.auc = TRUE)
 
 
 
-```{r}
+```{r paged.print=TRUE}
 library(ggplot2)
 
 df <- data.frame(True_Label = true_labels,
@@ -9958,7 +9953,7 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 # DONE HIPs   
 ## Maybe use adipocytes and pellet models, if enough samples!
 #=======================================
-## ADD adipocyte and pellet information
+## ADD adipocyte and pellet information on the models in hips and tibias.
 #=======================================
 
 
