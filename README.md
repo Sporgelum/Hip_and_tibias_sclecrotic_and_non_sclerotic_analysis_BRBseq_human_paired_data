@@ -8,9 +8,5 @@ Get data from lea to validate model if tibia drug sclerotic treated samples move
 
 Add adipocyte/pellet to models
 ## Done
-<embed src="Analysis_removed_samples_2/Figures/phm_accuracy_hips.pdf" type="application/pdf">
-<embed src="Analysis_removed_samples_2/Figures/phm_accuracy_tibias.pdf" type="application/pdf">
-
-
-
-
+[View hip accuracy PDF](Analysis_removed_samples_2/Figures/phm_accuracy_hips.pdf)
+[View tibia accuracy PDF](Analysis_removed_samples_2/Figures/phm_accuracy_tibias.pdf)
