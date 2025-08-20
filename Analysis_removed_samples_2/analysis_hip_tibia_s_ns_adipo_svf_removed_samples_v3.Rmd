@@ -7953,7 +7953,7 @@ head(logcpm_tibias)
 cat("Tibia expression samples:", ncol(logcpm_tibias), "\n")
 ```
 
-```{r paged.print=TRUE}
+```{r paged.print=TRUE,fig.height=35,fig.width=8}
 # No need to run again limma as we have here already the F statistsic from the edgeR results.
 head(tibia_sclerotic_vs_non_sclerotic$d$design)
 top_f_genes <- tibia_sclerotic_vs_non_sclerotic$results$table |> 
@@ -8009,7 +8009,10 @@ message("using edger top genes, modeled using ~0+patient+group, to extract the t
 
 # quick visu sanity check to see selected genes separate.
 library(pheatmap)
-annotation_col <-  md_df_tibia_extended |>  dplyr::select(Group,sampleID) |> tibble::column_to_rownames("sampleID")
+annotation_col <-  md_df_tibia_extended |>  dplyr::select(Group,sampleID,Gender,cysts,fibrosis,blood_vessels,cartilage_islands,trabeculae_thickened,tidemark_integrity,inflammation,oabs_scoring, oarsi_scoring,tissue_celltype_lowercase) |>
+  tibble::column_to_rownames("sampleID")
+
+annotation_col[] <- lapply(annotation_col,factor)
 
 #pheatmap::pheatmap(mat = selected_data,annotation_col = annotation_col,# old f statistic pheatmap
 #pheatmap::pheatmap(mat = selected_data_limma,annotation_col = annotation_col,
@@ -8053,7 +8056,7 @@ combined_data_tibias$inflammation<- as.factor(combined_data_tibias$inflammation)
 combined_data_tibias$oabs_scoring<- as.factor(combined_data_tibias$oabs_scoring)
 combined_data_tibias$oarsi_scoring<- as.factor(combined_data_tibias$oarsi_scoring)
 combined_data_tibias$condition <- factor(combined_data_tibias$health_status)
-combined_data_tibias$celltype <- factor(combined_data_tibias$tissue_celltype_lowercase)
+combined_data_tibias$tissue_celltype_lowercase <- factor(combined_data_tibias$tissue_celltype_lowercase)
 combined_data_tibias$Age <- as.numeric(combined_data_tibias$Age)
 combined_data_tibias$Gender <- factor(combined_data_tibias$Gender)
 combined_data_tibias$BMI <- as.numeric(combined_data_tibias$BMI)
@@ -8153,13 +8156,13 @@ test_data_clean$patientID  <- factor(gsub("_.*", "", test_data_clean$sampleID))
 
 groupids <- train_data_clean$patientID
 
-drop_cols <- c("sampleID", "health_status", "tissue_celltype_lowercase", "celltype", "patientID")
+drop_cols <- c("sampleID", "health_status", "patientID")
 train_data_clean <- train_data_clean[, !(names(train_data_clean) %in% drop_cols)]
 test_data_clean  <- test_data_clean[, !(names(test_data_clean) %in% drop_cols)]
 
 train_data_clean[,(tail(colnames(train_data_clean),15))]
 test_data_clean[,(tail(colnames(test_data_clean),15))]
-non_numeric_cols = c("condition","Gender","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")
+non_numeric_cols = c("condition","Gender","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation","tissue_celltype_lowercase")
 
 train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)] <- sapply(train_data_clean[, !(names(train_data_clean) %in% non_numeric_cols)],as.numeric)
 test_data_clean[, !names(test_data_clean) %in% non_numeric_cols] <- sapply(test_data_clean[, !(names(test_data_clean) %in% non_numeric_cols)],as.numeric)
@@ -8503,8 +8506,8 @@ if (!is.null(rf_tuned_prox$finalModel$proximity)) {
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(50)  # Top 50 most important genes
-message(cat("Top50 Gini features:",top_genes))
+top_genes <- importance_df_gini |> dplyr::arrange(desc(MeanDecreaseGini)) |> dplyr::pull(Gene) |> head(100)  # Top 50 most important genes
+message(cat("Top100 Gini features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -8522,7 +8525,7 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")], by = c("sample_2"="sampleID")) |>
+  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation","tissue_celltype_lowercase")], by = c("sample_2"="sampleID")) |>
   dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
@@ -8535,6 +8538,7 @@ heatmap_annotation$fibrosis <- factor(heatmap_annotation$fibrosis)
 heatmap_annotation$blood_vessels <- factor(heatmap_annotation$blood_vessels)
 heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_thickened)
 heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
+heatmap_annotation$tissue_celltype_lowercase <- factor(heatmap_annotation$tissue_celltype_lowercase)
 
 
 
@@ -8548,17 +8552,17 @@ pheatmap(
   show_rownames = TRUE,
   show_colnames = FALSE,
   main = "Heatmap of Top 50 Most GINI Important Genes",
-  fontsize_row = 6,
-  color = colorRampPalette(c("blue", "white", "red"))(100)
-)
+  fontsize_row = 8,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  filename = "Figures/phm_gini_tibias.pdf",width = 8,height = 15)
 
 # ================================================================
 # VISUALIZATION 7.2: GENE EXPRESSION HEATMAP Accuracy
 # ================================================================
 
 # Create heatmap of top important genes
-top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(50)# Top 50 most important genes
-message(cat("Top50 Accuracy features:",top_genes))
+top_genes <- importance_df_accuracy |> dplyr::arrange(desc(MeanDecreaseAccuracy)) |> dplyr::pull(Gene) |> head(100)# Top 50 most important genes
+message(cat("Top100 Accuracy features:",top_genes))
 top_genes <- gsub(top_genes,pattern = "\\.",replacement = "-")
 valid_genes <- top_genes[top_genes %in% rownames(selected_data)]
 heatmap_data <- selected_data[valid_genes, ]
@@ -8576,7 +8580,7 @@ annotation_col <- annotation_col |>
 #annotation_col_rownames_safety_check <- annotation_col$sample_2
 # Add metadata (BMI, Age, Gender)
 heatmap_annotation <- annotation_col |> 
-  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation")], by = c("sample_2"="sampleID")) |>
+  dplyr::left_join(md_df_tibia_extended[,c("sampleID","Age","Gender","BMI","oarsi_scoring","oabs_scoring","cysts","fibrosis","blood_vessels", "trabeculae_thickened", "inflammation","tissue_celltype_lowercase")], by = c("sample_2"="sampleID")) |>
   dplyr::select(-ID, -tissue, -type, -sample_2)
 
 rownames(heatmap_annotation) <- colnames(heatmap_data)
@@ -8589,6 +8593,7 @@ heatmap_annotation$fibrosis <- factor(heatmap_annotation$fibrosis)
 heatmap_annotation$blood_vessels <- factor(heatmap_annotation$blood_vessels)
 heatmap_annotation$trabeculae_thickened <- factor(heatmap_annotation$trabeculae_thickened)
 heatmap_annotation$inflammation <- factor(heatmap_annotation$inflammation)
+heatmap_annotation$tissue_celltype_lowercase <- factor(heatmap_annotation$tissue_celltype_lowercase)
 
 
 
@@ -8603,7 +8608,8 @@ pheatmap(
   show_colnames = FALSE,
   main = "Heatmap of Top 50 Most Accuracy Important Genes",
   fontsize_row = 6,
-  color = colorRampPalette(c("blue", "white", "red"))(100)
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  filename = "Figures/phm_accuracy_tibias.pdf",width = 8,height = 15
 )
 
 message("they both include oarsi score 6, if sample was very damaged")
@@ -8738,7 +8744,9 @@ table(test_data_clean$condition)
 
 ```{r}
 #oarsi_samples model
-saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_tibia_samples_rf_model_20250805.rds")
+#saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_tibia_samples_rf_model_20250805.rds")
+saveRDS(rf_tuned, "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/all_features_on_tibia_samples_rf_model_20250820.rds")
+
 
 ```
 
@@ -8778,7 +8786,7 @@ dim(tibia_samples_without_features)
 # Add metadata
 tibia_samples_without_features_data <- t(tibia_samples_without_features) |> as.data.frame() 
 tibia_samples_without_features_data$sampleID <- rownames(tibia_samples_without_features_data)
-tibia_samples_without_features_data <- tibia_samples_without_features_data |> dplyr::left_join(md_df_tibia |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI")), by = "sampleID")
+tibia_samples_without_features_data <- tibia_samples_without_features_data |> dplyr::left_join(md_df_tibia |> dplyr::select(c("sampleID","health_status","Age","Gender","BMI","tissue_celltype_lowercase")), by = "sampleID")
 tibia_samples_without_features_data <-tibia_samples_without_features_data |> dplyr::mutate(condition = health_status) |> dplyr::select(-health_status)
 
 #========================
@@ -8805,7 +8813,7 @@ gene_columns <- setdiff(names(train_data_clean), c("condition", "Age", "BMI", "G
 # Subset gene columns in new data
 colnames(tibia_samples_without_features_data) <- gsub(x = colnames(tibia_samples_without_features_data),pattern = "-",replacement = ".")
 tibia_samples_without_features_data_test <- tibia_samples_without_features_data[, c(gene_columns,"Age", "BMI", "Gender","oarsi_scoring", "oabs_scoring", "cysts", "fibrosis",
-                      "blood_vessels", "trabeculae_thickened", "inflammation")]
+                      "blood_vessels", "trabeculae_thickened", "inflammation","tissue_celltype_lowercase")]
 
 head(tibia_samples_without_features_data_test[,c(tail(colnames(tibia_samples_without_features_data_test),15))])
 tibia_samples_without_features_data_test$fibrosis
@@ -9581,8 +9589,8 @@ pheatmap(
   show_colnames = FALSE,
   main = "Heatmap of Top 50 Most GINI Important Genes",
   fontsize_row = 6,
-  color = colorRampPalette(c("blue", "white", "red"))(100)
-)
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  filename = "Figures/phm_gini_hips.pdf",width = 8,height = 15)
 
 # ================================================================
 # VISUALIZATION 7.2: GENE EXPRESSION HEATMAP Accuracy
@@ -9640,8 +9648,8 @@ pheatmap(
   show_colnames = FALSE,
   main = "Heatmap of Top 50 Most Accuracy Important Genes",
   fontsize_row = 6,
-  color = colorRampPalette(c("blue", "white", "red"))(100)
-)
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  filename = "Figures/phm_accuracy_hips.pdf",width = 8,height = 15)
 
 message("they both include oarsi score 6, if sample was very damaged")
 # ================================================================
@@ -9956,13 +9964,6 @@ ggplot(df,aes(x = SampleID, y = 1, fill = Correct_Probability_Label)) +
 ```
 
 # DONE HIPs   
-#=======================================
-## ADD adipocyte and pellet information on the models in tibias.
-#=======================================
-
-
-
-
 ```{r}
 # Unique genes of adipocytes and unique of pellets and check presence in the rf model predicted genes?
 
