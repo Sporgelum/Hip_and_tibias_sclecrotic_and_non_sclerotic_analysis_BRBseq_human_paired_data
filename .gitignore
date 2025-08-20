@@ -15,6 +15,7 @@ brbseq-nf-pipeline/results/AMP0211/bigwigs/*
 brbseq-nf-pipeline/results/AMP0211/count_matrix/*
 *.png
 *.pdf
+!Analysis_removed_samples_2/Figures/*
 *.jpg
 *.jpeg
 *.svg
