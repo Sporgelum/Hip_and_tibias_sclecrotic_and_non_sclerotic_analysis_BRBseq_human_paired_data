@@ -12424,7 +12424,6 @@ cor_matrix <- cor(adipo_mat, svf_mat, method = "pearson")
 cor_sclerotic    <- cor(adipo_sclerotic, svf_sclerotic, method = "pearson")
 cor_non_sclerotic <- cor(adipo_non_sclerotic, svf_non_sclerotic, method = "pearson")
 
-
 #heatmap(cor_mat)
 pheatmap(cor_matrix,
          cluster_rows = TRUE,
@@ -12457,20 +12456,287 @@ pheatmap(cor_non_sclerotic,
 
 
 
+#Adipocytes ONLY
+#Adipocytes ONLY
+#Adipocytes ONLY
+cor_sclerotic_adipo <- cor(adipo_sclerotic, adipo_sclerotic, method = "pearson")
+cor_non_sclerotic_adipo <- cor(adipo_non_sclerotic, adipo_non_sclerotic, method = "pearson")
+mask_upper_triangle <- function(cor_mat) {
+  cor_mat[upper.tri(cor_mat)] <- NA
+  return(cor_mat)}
+# 
+# cor_sclerotic_adipo_lower     <- mask_upper_triangle(cor_sclerotic_adipo)
+# cor_non_sclerotic_adipo_lower <- mask_upper_triangle(cor_non_sclerotic_adipo)
+
+
+pheat <- pheatmap(cor_sclerotic_adipo,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         silent = TRUE)
+# Get row and column order
+row_order <- pheat$tree_row$order
+col_order <- pheat$tree_col$order
+cor_sclerotic_adipo_clustered <- cor_sclerotic_adipo[row_order, col_order]
+cor_sclerotic_adipo_lower <- cor_sclerotic_adipo_clustered
+cor_sclerotic_adipo_lower[upper.tri(cor_sclerotic_adipo_lower)] <- NA
+
+pheatmap(cor_sclerotic_adipo_lower,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         #color = viridis(100, option = "C"),
+         main = "Tibia Adipocytes Correlation (Sclerotic)",
+         fontsize_row = 6,
+         fontsize_col = 6,
+         na_col = "white",
+         filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/tibia/adipocytes_sclerotic_correlation_heatmap_tibias_adipocytes_rf_gini_genes.pdf",
+         width = 31, height = 31)
 
 
 
+pheat <- pheatmap(cor_non_sclerotic_adipo,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         silent = TRUE)
+# Get row and column order
+row_order <- pheat$tree_row$order
+col_order <- pheat$tree_col$order
+cor_non_sclerotic_adipo_clustered <- cor_non_sclerotic_adipo[row_order, col_order]
+cor_non_sclerotic_adipo_lower <- cor_non_sclerotic_adipo_clustered
+cor_non_sclerotic_adipo_lower[upper.tri(cor_non_sclerotic_adipo_lower)] <- NA
+pheatmap(cor_non_sclerotic_adipo_lower,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         #color = viridis(100, option = "C"),
+         main = "Tibia Adipocytes Correlation (Non-Sclerotic)",
+         fontsize_row = 6,
+         fontsize_col = 6,
+         na_col = "white",
+         filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/tibia/adipocytes_non_sclerotic_correlation_heatmap_tibias_adipocytes_rf_gini_genes.pdf",
+         width = 31, height = 31)
+
+
+#SVF ONLY
+#SVF ONLY
+#SVF ONLY
+cor_sclerotic_svf <- cor(svf_sclerotic, svf_sclerotic, method = "pearson")
+cor_non_sclerotic_svf <- cor(svf_non_sclerotic, svf_non_sclerotic, method = "pearson")
+mask_upper_triangle <- function(cor_mat) {
+  cor_mat[upper.tri(cor_mat)] <- NA
+  return(cor_mat)}
+
+# cor_sclerotic_svf_lower     <- mask_upper_triangle(cor_sclerotic_svf)
+# cor_non_sclerotic_svf_lower <- mask_upper_triangle(cor_non_sclerotic_svf)
+
+
+pheat <- pheatmap(cor_sclerotic_svf,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         silent = TRUE)
+# Get row and column order
+row_order <- pheat$tree_row$order
+col_order <- pheat$tree_col$order
+cor_sclerotic_svf_clustered <- cor_sclerotic_svf[row_order, col_order]
+cor_sclerotic_svf_lower <- cor_sclerotic_svf_clustered
+cor_sclerotic_svf_lower[upper.tri(cor_sclerotic_svf_lower)] <- NA
+
+
+pheatmap(cor_sclerotic_svf_lower,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         #color = viridis(100, option = "C"),
+         main = "Tibia SVF Correlation (Sclerotic)",
+         fontsize_row = 6,
+         fontsize_col = 6,
+         na_col = "white",
+         filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/tibia/svf_sclerotic_correlation_heatmap_tibias_svf_rf_gini_genes.pdf",
+         width = 31, height = 31)
 
 
 
+pheat <- pheatmap(cor_non_sclerotic_svf,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         silent = TRUE)
+# Get row and column order
+row_order <- pheat$tree_row$order
+col_order <- pheat$tree_col$order
+cor_non_sclerotic_svf_clustered <- cor_non_sclerotic_svf[row_order, col_order]
+cor_non_sclerotic_svf_lower <- cor_non_sclerotic_svf_clustered
+cor_non_sclerotic_svf_lower[upper.tri(cor_non_sclerotic_svf_lower)] <- NA
 
-
-
+pheatmap(cor_non_sclerotic_svf_lower,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         #color = viridis(100, option = "C"),
+         main = "Tibia SVF Correlation (Non-Sclerotic)",
+         fontsize_row = 6,
+         fontsize_col = 6,
+         na_col = "white",
+         filename = "~/CLUSTER/Environments/2024_07_05_Lea_Lausanne_Hip_Tibia_BRBseq/Analysis_removed_samples_2/trained_models_rf/tibia/svf_non_sclerotic_correlation_heatmap_tibias_svf_rf_gini_genes.pdf",
+         width = 31, height = 31)
 
 
 ```
 
 
+# 1. Corr Adipocytes to Sex. (tibias)
+# 1. Corr Adipocytes to Sex. (tibias)
+# 1. Corr Adipocytes to Sex. (tibias)
+# 1. Corr Adipocytes to Sex. (tibias)
+```{r}
+# According to Bart the signatures of female and male adipcytes is different.
+
+md_df_tibia# Contains only filtered samples.
+m_pca_tibia$matrix_raw_filtered_samples_for_DEG
+md_df_tibia$Group
+md_df_tibia$Age
+#m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$Group == "TNSA"]
+#m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$Group == "TSA"]
+# counts <- m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte"]]
+# metadata <- md_df_tibia
+# rownames(metadata) <- md_df_tibia$sampleID
+# genes <-rownames(counts)
+run_edger_male_vs_female <- function(counts, metadata, genes) {
+   if(!all(colnames(counts) %in% metadata$sampleID)) stop("Column names of counts don't match metadata$Sample.Name")
+  
+  # In case, reorder the metadata to match counts colnames
+  message("Check rownames match the columns names of the samples, that there are rownames in the metadata file!\n")
+  rownames(metadata) <- metadata$sampleID
+  metadata = metadata[colnames(counts),]
+
+  # Factors
+  metadata$sampleID <- factor(metadata$sampleID)
+  metadata$Gender   <- factor(metadata$Gender)# f is reference alphabetically, so we will have male vs female.
+  metadata$health_status <- factor(metadata$health_status)
+  #metadata$Age       <- factor(metadata$Day, levels = c("d0","d1"))
+  #metadata$BMI  <- factor(metadata$Adjuvant)
+  # metadata$Antigen   <- factor(metadata$Antigen, levels = c("FALSE","TRUE"))
+  # metadata$sampleID <- factor(metadata$sampleID)
+  
+  # Build DGEList
+  y <- DGEList(counts = counts, samples = metadata, genes=genes)
+  
+  y <- calcNormFactors(y, method = "TMM")
+  logcpm <- cpm(y, log = TRUE, prior.count = 1, normalized.lib.sizes = TRUE)
+  metadata$sampleID <- factor(metadata$sampleID)
+
+  # Design
+  # Create design matrix subseting the samples for the conditions of nteerests
+  # Loop over conditions.
+
+  results_list <- list()
+  #adj="non.sclerotic"
+  for(adj in levels(metadata$health_status)){
+    message(paste0("Running analysis on: ",adj))
+    idx <- which(metadata$health_status == adj)
+    metadata.sub <- metadata[idx, ]
+    y.sub <- y[, idx]            # subset DGEList (keeps lib.size and norm.factors consistent)
+    # design: paired model (subject fixed effect + Day)
+    #metadata.sub$Sample.Name <- factor(metadata.sub$Sample.Name)  # ensure factor levels are local
+    metadata.sub$Gender <- factor(metadata.sub$Gender)  
+    
+    
+    design <- model.matrix(~Gender, data = metadata.sub)  # intercept included
+    colnames(design)
+
+    # check rank
+    rr <- qr(design)
+    if(rr$rank < ncol(design)){
+      stop(paste("Design is not full rank for adjuvant", adj, "- examine metadata.sub / design"))}
+    
+    y.sub <- estimateDisp(y.sub, design, robust=TRUE)
+    plotMDS(y.sub,col=as.numeric(as.factor(y.sub$samples$Gender)))
+    legend("topright", legend = levels(as.factor(y.sub$samples$Gender)), col = 1:length(levels(as.factor(y.sub$samples$Gender))), pch = 16)
+    message(paste0("MDS Plot created"))
+  
+
+
+
+    fit <- glmQLFit(y.sub, design, robust=TRUE)
+    plotQLDisp(fit)
+
+    # find Day coefficient name
+    print(colnames(design))
+    day_coef <- grep("^Gender", colnames(design), value=TRUE)
+    if(length(day_coef) != 1) stop("Can't find unique Gender coefficient; inspect design colnames")
+    
+
+    message(paste0("Using the pattern ",levels(metadata.sub$Gender)[-1]," to grab the column names of the last column from the design.\n"))
+    non_reference_condition <- gsub(pattern = "Gender",replacement = "",x = colnames(design)[dim(design)[2]])
+    #levels(metadata.sub$Day)
+    #comparison_name <- paste0(non_reference_condition,"-vs-",control_condition)
+    comparison_name <- paste0(non_reference_condition,"_vs_",levels(metadata.sub$Gender)[1])
+    message("Performing differential expression analysis.")
+    message(paste0("Running contrast on: ",comparison_name))  
+
+    qlf <- glmQLFTest(fit, coef = day_coef)
+
+    results_list[[as.character(adj)]]$results <- topTags(qlf, n=Inf)
+    results_list[[as.character(adj)]]$fit <- fit
+    results_list[[as.character(adj)]]$y <- y.sub$samples
+    results_list[[as.character(adj)]]$design <- design
+    results_list[[as.character(adj)]]$name <- comparison_name
+    results_list[[as.character(adj)]]$logcpm <- logcpm[,y.sub$samples$sampleID]
+    message(paste0("Done with ",adj))
+  }
+  
+  return(results_list)
+}
+
+# counts <- m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte"]]
+# metadata <- md_df_tibia
+# rownames(metadata) <- md_df_tibia$sampleID
+#rownames(metadata) <- md_df_tibia$sampleID
+# genes <-rownames(counts)
+# DEA GROUPS from all samples together. --> CREATE GROUP for Gender:condition (see if geneder is differently influencing the sclerocity?)
+tibia_adipocytes_male_vs_female <- run_edger_male_vs_female(
+  counts=m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte"]],
+  metadata = md_df_tibia,
+  genes=rownames(m_pca_tibia$matrix_raw_filtered_samples_for_DEG[,md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte"]]))
+```
+
+
+```{r}
+tibia_adipocytes_male_vs_female$sclerotic$results$table |> dplyr::filter(FDR < 0.05) |> dplyr::arrange(desc(logFC))
+```
+
+```{r}
+top_genes_sclerotic_male_vs_female <- tibia_adipocytes_male_vs_female$sclerotic$results$table |> dplyr::filter(FDR < 0.05) |> dplyr::arrange(desc(logFC))
+expr_subset <- tibia_adipocytes_male_vs_female$sclerotic$logcpm[top_genes_sclerotic_male_vs_female$genes,]
+# Annotate samples by sex
+annotation_col <- data.frame(Sex = md_df_tibia$Gender[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "sclerotic"])
+annotation_col$Age <- md_df_tibia$Age[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "sclerotic"]
+annotation_col$BMI <- md_df_tibia$BMI[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "sclerotic"]
+rownames(annotation_col) <- md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "sclerotic"]
+pheatmap(expr_subset,
+          annotation_col = annotation_col,
+          cluster_rows = TRUE,
+          cluster_cols = TRUE,
+          color = viridis::viridis(100),
+          main = "Tibia Sclerotic Top Sex-Differential Genes in Adipocytes")
+
+
+
+
+```
+```{r}
+top_genes_non_sclerotic_male_vs_female <- tibia_adipocytes_male_vs_female$non.sclerotic$results$table |> dplyr::filter(FDR < 0.05) |> dplyr::arrange(desc(logFC))
+expr_subset <- tibia_adipocytes_male_vs_female$non.sclerotic$logcpm[top_genes_non_sclerotic_male_vs_female$genes,]
+# Annotate samples by sex
+annotation_col <- data.frame(Sex = md_df_tibia$Gender[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "non.sclerotic"])
+annotation_col$Age <- md_df_tibia$Age[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "non.sclerotic"]
+annotation_col$BMI <- md_df_tibia$BMI[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "non.sclerotic"]
+rownames(annotation_col) <- md_df_tibia$sampleID[md_df_tibia$tissue_celltype_lowercase == "adipocyte" & md_df_tibia$health_status == "non.sclerotic"]
+pheatmap(expr_subset,
+          annotation_col = annotation_col,
+          cluster_rows = TRUE,
+          cluster_cols = TRUE,
+          color = viridis::viridis(100),
+          main = "Tibia Non.Sclerotic Top Sex-Differential Genes in Adipocytes")
+
+
+
+```
 
 
 # 1. HIPS COMPARTMENTS
@@ -12480,6 +12746,10 @@ pheatmap(cor_non_sclerotic,
 
 
 
+
+# 1. TREATMENTS
+# 1. TREATMENTS
+# 1. TREATMENTS
 ```{r}
 # Unique genes of adipocytes and unique of pellets and check presence in the rf model predicted genes?
 
