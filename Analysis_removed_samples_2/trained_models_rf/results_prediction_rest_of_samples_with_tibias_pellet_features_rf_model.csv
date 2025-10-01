@@ -1,0 +1,16 @@
+"True_Label","Predicted_Label","SampleID","Probability.Sclerotic","Probability.Non.Sclerotic","Predicted_Probability_Label","Correct_Probability_Label"
+"1","non.sclerotic","non.sclerotic","X151_Tibia_non.sclerotic_pellet",0.343,0.657,"non.sclerotic",TRUE
+"2","sclerotic","sclerotic","X151_Tibia_sclerotic_pellet",0.6275,0.3725,"sclerotic",TRUE
+"3","non.sclerotic","non.sclerotic","X155_Tibia_non.sclerotic_pellet",0.202,0.798,"non.sclerotic",TRUE
+"4","sclerotic","sclerotic","X155_Tibia_sclerotic_pellet",0.5435,0.4565,"sclerotic",TRUE
+"5","non.sclerotic","non.sclerotic","X159_Tibia_non.sclerotic_pellet",0.3235,0.6765,"non.sclerotic",TRUE
+"6","sclerotic","sclerotic","X159_Tibia_sclerotic_pellet",0.682,0.318,"sclerotic",TRUE
+"7","non.sclerotic","non.sclerotic","X160_Tibia_non.sclerotic_pellet",0.371,0.629,"non.sclerotic",TRUE
+"8","sclerotic","non.sclerotic","X160_Tibia_sclerotic_pellet",0.426,0.574,"non.sclerotic",FALSE
+"9","non.sclerotic","non.sclerotic","X161_Tibia_non.sclerotic_pellet",0.4035,0.5965,"non.sclerotic",TRUE
+"10","sclerotic","sclerotic","X161_Tibia_sclerotic_pellet",0.657,0.343,"sclerotic",TRUE
+"11","non.sclerotic","sclerotic","X163_Tibia_non.sclerotic_pellet",0.6525,0.3475,"sclerotic",FALSE
+"12","non.sclerotic","non.sclerotic","X164_tibia_non.sclerotic_pellet",0.3635,0.6365,"non.sclerotic",TRUE
+"13","sclerotic","sclerotic","X164_tibia_sclerotic_pellet",0.6205,0.3795,"sclerotic",TRUE
+"14","non.sclerotic","non.sclerotic","X99_Tibia_non.sclerotic_pellet",0.392,0.608,"non.sclerotic",TRUE
+"15","sclerotic","sclerotic","X99_Tibia_sclerotic_pellet",0.632,0.368,"sclerotic",TRUE
